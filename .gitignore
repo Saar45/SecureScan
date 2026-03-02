@@ -1,0 +1,28 @@
+# Environment
+.env
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Backend (Symfony)
+backend/vendor/
+backend/var/
+backend/.env.local
+backend/.env.local.php
+backend/.env.*.local
+backend/.php-cs-fixer.cache
+
+# Frontend (React/Vite)
+frontend/node_modules/
+frontend/dist/
+frontend/.env.local
+
+# Docker
+mysql_data/
