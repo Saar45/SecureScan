@@ -18,6 +18,7 @@ CREATE TABLE IF NOT EXISTS `scans` (
     `executed_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     `global_score` DECIMAL(5,2) DEFAULT NULL,
     `status` VARCHAR(50) NOT NULL DEFAULT 'pending',
+    `workdir` VARCHAR(500) DEFAULT NULL,
     CONSTRAINT `fk_scans_project` FOREIGN KEY (`project_id`) REFERENCES `projects`(`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 

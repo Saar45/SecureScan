@@ -1,322 +1,108 @@
 ## SecureScan
 
-Plateforme de scan de sécurité automatisé pour dépôts Git.  
-SecureScan clone un dépôt, exécute plusieurs outils d’analyse (Semgrep, TruffleHog, audit de dépendances npm/composer), normalise les résultats (sévérité, catégorie OWASP) et calcule un score global, le tout stocké en base via Doctrine.
+Plateforme de scan de sécurité automatisé pour dépôts Git.
+SecureScan clone un dépôt, exécute plusieurs outils d'analyse (Semgrep, TruffleHog, audit npm/composer), normalise les résultats, calcule un score global, puis peut créer une branche de correction et générer un rapport PDF.
 
-### Vue d’ensemble fonctionnelle
+---
 
-- **Objectif principal**: donner une vision rapide de la santé sécurité d’un dépôt applicatif.
-- **Entrée**: une URL de dépôt Git (HTTP(S) ou SSH) passée à la commande Symfony.
-- **Pipeline**:
-  - clonage isolé du dépôt dans `/tmp/scans/<uuid>`,
-  - détection de l’écosystème (npm / composer),
-  - exécution des scanners:
-    - **Semgrep** pour l’analyse de code,
-    - **TruffleHog** pour la détection de secrets,
-    - **npm audit** ou **composer audit** pour les dépendances,
-  - création d’entités `Scan`, `Finding`, `Remediation`,
-  - calcul d’un **score global sur 100**.
-- **Sortie**: un `Scan` persistant (en base) avec ses findings, accessible ensuite par l’API / backend.
+### Stack Technique
 
-### Architecture globale
-
-- **Backend**: Symfony 6.4 (PHP 8.4, Doctrine ORM, Console, Process, UID).
-  - Localisé dans `backend/`.
-  - Expose une commande `app:test-scan` pour lancer un scan complet depuis le terminal.
-  - Persiste `Project`, `Scan`, `Finding`, `Remediation` dans une base MySQL.
-- **Frontend**: application JavaScript (Vite) consommant l’API du backend.
-  - Localisée dans `frontend/`.
-  - Utilise la variable d’environnement `VITE_API_URL` pour joindre le backend.
-- **Base de données**:
-  - **MySQL** (via `docker-compose.yml`) pour l’application.
-  - Un **PostgreSQL** de support est aussi défini côté Symfony (`backend/compose.yaml`) pour les besoins Doctrine standard, mais la stack principale est centrée sur MySQL avec Docker racine.
-- **Outils de sécurité intégrés dans l’image backend** (voir `backend/Dockerfile`):
-  - **Semgrep** installé via `pip3` et disponible en `/usr/local/bin/semgrep`.
-  - **TruffleHog** installé via script officiel dans `/usr/local/bin/trufflehog`.
-  - **npm** (pour `npm audit`).
+| Service    | URL                   | Stack                            |
+|------------|-----------------------|----------------------------------|
+| Backend    | http://localhost:8080 | Symfony 6.4, PHP 8.4, Apache    |
+| Frontend   | http://localhost:3000 | React 19, TypeScript, Vite 7    |
+| Database   | localhost:3306        | MySQL 8.0                        |
+| phpMyAdmin | http://localhost:8081 | Administration BDD               |
 
 ---
 
 ### Prérequis
 
-- **Docker** et **Docker Compose** installés et fonctionnels.
-- Accès réseau au dépôt Git que vous voulez scanner (GitHub, GitLab, etc.).
-- Ports disponibles:
-  - `8080` (backend Symfony derrière Apache),
-  - `3000` (frontend),
-  - `3306` (MySQL),
-  - `8081` (phpMyAdmin).
+- **Docker** et **Docker Compose**
+- Accès réseau au dépôt Git cible
+- Ports disponibles : `8080`, `3000`, `3306`, `8081`
 
 ---
 
-### Configuration des variables d’environnement
-
-Les fichiers `.env` racine et backend contiennent la configuration principale.
-
-#### Racine du projet (`.env`)
-
-- **MySQL**
-  - `MYSQL_ROOT_PASSWORD`: mot de passe root MySQL.
-  - `MYSQL_DATABASE`: nom de la base applicative (ex: `security_scanner`).
-  - `MYSQL_USER` / `MYSQL_PASSWORD`: utilisateur applicatif et mot de passe.
-- **Symfony**
-  - `APP_ENV`: environnement Symfony (`dev` par défaut).
-  - `APP_SECRET`: secret d’application (doit être remplacé en prod).
-  - `CORS_ALLOW_ORIGIN`: origine autorisée pour le frontend (ex: `http://localhost:3000`).
-  - `DATABASE_URL`: URL de connexion MySQL (utilisée dans le container backend).
-- **Frontend**
-  - `VITE_API_URL`: URL publique de l’API backend (ex: `http://localhost:8080`).
-
-#### Backend (`backend/.env`)
-
-Ce fichier recopie l’essentiel de la configuration (MySQL + Symfony + frontend) mais du point de vue du backend. Assurez‑vous d’avoir des valeurs cohérentes entre le `.env` racine et celui du `backend` si vous les modifiez.
-
----
-
-### Lancement rapide avec Docker
-
-Depuis la racine du projet (`SecureScan/` contenant `docker-compose.yml`) :
-
-```bash
-docker-compose up --build
-```
-
-- **backend**:
-  - construit à partir de `backend/Dockerfile`,
-  - exposé sur `http://localhost:8080`.
-- **frontend**:
-  - construit à partir de `frontend/Dockerfile`,
-  - exposé sur `http://localhost:3000`.
-- **mysql**:
-  - exposé sur `localhost:3306`,
-  - données persistées dans le volume `mysql_data`.
-- **phpmyadmin**:
-  - disponible sur `http://localhost:8081` (pratique pour inspecter la base).
-
-Arrêt de la stack:
-
-```bash
-docker-compose down
-```
-
----
-
-### Commande de test de scan (`TestScanCommand`)
-
-Fichier: `backend/src/Command/TestScanCommand.php`
-
-Cette commande Symfony encapsule tout le pipeline de scan pour un usage direct depuis le terminal.
-
-- **Nom de la commande**: `app:test-scan`
-- **Arguments**:
-  - `url` (requis): URL du dépôt Git à scanner.
-  - `name` (optionnel): nom du projet dans la base (sinon, un nom par défaut est généré).
-- **Comportement**:
-  1. Recherche un `Project` existant avec `repositoryUrl = url`.
-  2. S’il n’existe pas, crée un nouveau `Project` (nom + URL) et le persiste.
-  3. Affiche dans la console si le projet est **créé** ou **réutilisé**.
-  4. Appelle `ScanManager::startScan($project)` pour lancer tout le pipeline.
-  5. Affiche un résumé du scan:
-     - ID du scan,
-     - statut (`completed` ou `failed`),
-     - score global,
-     - nombre de findings.
-  6. Gère les exceptions et renvoie un code de sortie Symfony (`SUCCESS` ou `FAILURE`).
-
-#### Exemple d’utilisation (dans le container backend)
-
-Depuis la racine du projet:
-
-```bash
-docker-compose exec backend php bin/console app:test-scan https://github.com/mon-org/mon-repo.git "Mon projet sécurisé"
-```
-
----
-
-### Le cœur du pipeline: `ScanManager`
-
-Fichier: `backend/src/Service/ScanManager.php`
-
-`ScanManager` est le **cerveau** technique du scan. Il:
-
-1. **Crée un `Scan`** rattaché au `Project` fourni, avec le statut initial `running`.
-2. **Prépare un répertoire de travail isolé** dans `/tmp/scans/<uuid>`:
-   - chaque scan a son propre dossier (via `Uuid::v4()`),
-   - cela évite les collisions entre exécutions parallèles.
-3. **Clone le dépôt Git** dans ce répertoire:
-   - via la classe Symfony `Process`,
-   - utilise `git clone --depth 1` pour un clone rapide,
-   - laisse Git choisir la branche par défaut (pas de `--branch` forcé).
-4. **Détecte l’outil de dépendances**:
-   - `package.json` → `npm`,
-   - `composer.json` → `composer`,
-   - aucun des deux → pas d’audit de dépendances.
-5. **Exécute les scanners**:
-   - `runSemgrep()`:
-     - lance `python3 /usr/local/bin/semgrep --config p/default --json`,
-     - récupère la sortie JSON.
-   - `runTrufflehog()`:
-     - lance `/usr/local/bin/trufflehog filesystem <workdir> --json`,
-     - TruffleHog renvoie un JSON par ligne → recomposition en tableau.
-   - `runDependencyAudit()`:
-     - pour **npm**: `/usr/bin/npm audit --json`
-       - gère le cas particulier où le code de sortie `1` signifie "vulnérabilités trouvées" (et non une erreur technique),
-     - pour **composer**: `composer audit --format=json`.
-6. **Transforme les résultats en entités métier**:
-   - `processSemgrepResults()`:
-     - crée un `Finding` par résultat Semgrep,
-     - normalise la sévérité (`normalizeSeverity()`),
-     - renseigne le chemin de fichier, la ligne, le message, le code brut,
-     - tente de déduire une **catégorie OWASP** via `mapToOwaspCategoryFromSemgrep()`.
-   - `processTrufflehogResults()`:
-     - crée un `Finding` par secret potentiel,
-     - sévérité forcée à `HIGH`,
-     - catégorie OWASP fixée à `A04` (Insecure Design / secrets exposés).
-   - `processDependencyResults()`:
-     - supporte:
-       - le **nouveau format** `npm audit` (`vulnerabilities`),
-       - l’**ancien format** (`advisories`),
-       - le format JSON de `composer audit`,
-     - crée un `Finding` associé au fichier `package.json` ou `composer.json`,
-     - mappe chaque advisory vers une catégorie OWASP via `mapToOwaspCategoryFromDependency()`.
-7. **Génère des recommandations automatiques**:
-   - `maybeCreateRemediation()`:
-     - pour certains OWASP (`A05`, `A04`), crée une entité `Remediation`,
-     - associe un texte de correction générique mais actionnable (ex: utiliser des requêtes préparées, ne pas stocker de secrets en dur).
-8. **Calcule le score global**:
-   - `computeScore()`:
-     - part d’un score de base `100`,
-     - applique une pénalité par finding via `penaltyForSeverity()`:
-       - CRITICAL: -20,
-       - HIGH: -10,
-       - MEDIUM: -5,
-       - LOW: -2,
-       - défaut: -1,
-     - borne le résultat entre 0 et 100,
-     - enregistre ce score au format `xx.xx`.
-9. **Gestion des erreurs**:
-   - entoure la procédure d’un `try { ... } catch (\Throwable $e)`:
-     - écrit un log technique directement sur `STDERR` (message + sortie d’erreur du process s’il existe),
-     - marque le `Scan` en statut `failed`,
-     - laisse malgré tout le `Scan` en base pour faciliter le diagnostic.
-
----
-
-### Développement backend hors Docker (optionnel)
-
-Si vous disposez d’un environnement PHP local (8.1+), vous pouvez:
-
-1. Installer les dépendances:
-
-```bash
-cd backend
-composer install
-```
-
-2. Lancer le serveur Symfony:
-
-```bash
-php -S localhost:8000 -t public
-```
-
-3. Lancer la commande de scan:
-
-```bash
-php bin/console app:test-scan <url-du-depot>
-```
-
-Assurez‑vous dans ce cas que:
-
-- les outils externes (`git`, `semgrep`, `trufflehog`, `npm`, `composer`) sont installés sur votre machine,
-- la base de données configurée dans `backend/.env` est accessible.
-
----
-
-### Résumé des points importants ajoutés
-
-- **Commande `app:test-scan`**:
-  - scénario complet pour tester le pipeline depuis la ligne de commande,
-  - création / réutilisation automatique d’un `Project`,
-  - affichage d’un résumé très lisible du `Scan`.
-- **`ScanManager` enrichi**:
-  - orchestration complète du pipeline (Git + Semgrep + TruffleHog + audits de dépendances),
-  - mappage des résultats vers des catégories **OWASP**,
-  - génération automatique de **remédiations** pour certains findings,
-  - calcul d’un **score de sécurité global**,
-  - logs techniques sur `STDERR` pour faciliter le debug en environnement Docker/CLI.
-
-Ce README te sert de documentation fonctionnelle et technique détaillée pour ton mémoire / bachelor et pour toute personne qui découvre SecureScan.
-
-# SecureScan
-
-Plateforme de scan de vulnérabilités de sécurité construite avec Symfony, React et MySQL.
-
-## Stack Technique
-
-- **Backend :** Symfony 7 (PHP 8.2, Apache)
-- **Frontend :** React 18 + TypeScript (Vite, Tailwind CSS)
-- **Base de données :** MySQL 8
-- **Administration :** phpMyAdmin
-
-## Prérequis
-
-- [Docker](https://www.docker.com/) et Docker Compose
-
-## Installation
-
-1. Cloner le dépôt :
+### Installation et lancement
 
 ```bash
 git clone https://github.com/Saar45/SecureScan.git
 cd SecureScan
-```
-
-2. Copier le fichier d'environnement et ajuster les valeurs si nécessaire :
-
-```bash
 cp .env.example .env
-```
-
-3. Construire et lancer les conteneurs :
-
-```bash
 docker compose up --build
 ```
 
-4. Accéder aux services :
+C'est tout. Pas de `composer install`, pas de migration, pas de seed manuel.
 
-| Service    | URL                    |
-| ---------- | ---------------------- |
-| Frontend   | http://localhost:3000   |
-| Backend    | http://localhost:8080   |
-| phpMyAdmin | http://localhost:8081   |
+- Le schéma SQL et les données OWASP sont chargés automatiquement au premier démarrage de MySQL (`mysql/init/`).
+- Les dépendances PHP (dont DomPDF) sont installées automatiquement par le script d'entrypoint du backend.
+- Le frontend installe ses dépendances npm au build de l'image.
 
-La base de données `security_scanner` est automatiquement créée et alimentée avec les données OWASP au premier lancement.
-
-## Structure du Projet
-
-```
-SecureScan/
-├── backend/            # API Symfony
-│   ├── src/Entity/     # Entités Doctrine (Project, Scan, Finding, Remediation)
-│   ├── src/Repository/ # Repositories Doctrine
-│   └── Dockerfile
-├── frontend/           # Application React + Vite
-│   ├── src/
-│   └── Dockerfile
-├── mysql/
-│   └── init/           # Schéma SQL + données de seed
-├── docker-compose.yml
-└── .env.example
+```bash
+docker compose down        # Arrêter les services
+docker compose down -v     # Arrêter + supprimer les volumes (reset BDD)
 ```
 
-## Identifiants Base de Données
+---
 
-Identifiants par défaut (depuis `.env.example`) :
+### Variables d'environnement
 
-| Variable             | Valeur               |
-| -------------------- | -------------------- |
-| `MYSQL_ROOT_PASSWORD`| `your_root_password` |
-| `MYSQL_DATABASE`     | `security_scanner`   |
-| `MYSQL_USER`         | `your_user`          |
-| `MYSQL_PASSWORD`     | `your_password`      |
+Fichier `.env.example` à copier en `.env` :
+
+| Variable               | Description                                        | Valeur par défaut              |
+|------------------------|----------------------------------------------------|--------------------------------|
+| `MYSQL_ROOT_PASSWORD`  | Mot de passe root MySQL                            | `your_root_password`           |
+| `MYSQL_DATABASE`       | Base applicative                                   | `security_scanner`             |
+| `MYSQL_USER`           | Utilisateur MySQL                                  | `your_user`                    |
+| `MYSQL_PASSWORD`       | Mot de passe MySQL                                 | `your_password`                |
+| `APP_ENV`              | Environnement Symfony                              | `dev`                          |
+| `APP_SECRET`           | Secret Symfony                                     | `change_me_to_a_random_secret` |
+| `CORS_ALLOW_ORIGIN`    | Origine CORS autorisée                             | `http://localhost:3000`        |
+| `GIT_TOKEN`            | GitHub PAT pour push authentifié (scope `repo`)    | *(vide)*                       |
+| `VITE_API_URL`         | URL de l'API pour le frontend                      | `http://localhost:8080`        |
+
+---
+
+### Modèle de données
+
+```
+Project (1) ──→ (N) Scan (1) ──→ (N) Finding (1) ──→ (1) Remediation
+```
+
+Tous les identifiants sont des UUID. La table `owasp_categories` est pré-remplie (A01–A10).
+
+---
+
+### Commandes CLI
+
+```bash
+# Lancer un scan
+docker compose exec backend php bin/console app:test-scan <url> [name]
+
+# Appliquer les remédiations Git + générer le rapport PDF
+docker compose exec backend php bin/console app:git-integration <scan-id>
+
+# Pipeline complet en une commande
+docker compose exec backend php bin/console app:full-pipeline <repo-url> [project-name]
+```
+
+---
+
+### Documentation par feature
+
+| Feature | Documentation |
+|---------|---------------|
+| Pipeline de scan (Semgrep, TruffleHog, audits) | [docs/feature-scan-pipeline.md](docs/feature-scan-pipeline.md) |
+| Intégration Git automatisée + rapport PDF | [docs/feature-git-integration.md](docs/feature-git-integration.md) |
+
+---
+
+### Développement
+
+```bash
+docker compose up --build backend       # Rebuild un seul service
+docker compose exec backend php bin/console <commande>
+docker compose exec backend composer require <package>
+docker compose exec frontend npm install <package>
+```

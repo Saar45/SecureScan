@@ -44,6 +44,7 @@ class ScanManager
         $this->entityManager->flush();
 
         $workdir = $this->prepareWorkdir();
+        $scan->setWorkdir($workdir);
 
         try {
             $this->cloneRepository($project, $workdir);

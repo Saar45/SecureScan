@@ -51,11 +51,18 @@ COPY docker/apache/vhost.conf /etc/apache2/sites-available/000-default.conf
 # Copy PHP config
 COPY docker/php/php.ini /usr/local/etc/php/conf.d/custom.ini
 
+# Copy entrypoint script (auto composer install on boot)
+COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh
+
 # Set working directory
 WORKDIR /var/www/html
 
-# Set proper permissions
+# Set proper permissions and create runtime directories
 RUN chown -R www-data:www-data /var/www/html && \
-    mkdir -p /tmp/scans && chmod 777 /tmp/scans
+    mkdir -p /tmp/scans && chmod 777 /tmp/scans && \
+    mkdir -p /tmp/reports && chmod 777 /tmp/reports
 
 EXPOSE 80
+
+ENTRYPOINT ["entrypoint.sh"]
