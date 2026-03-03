@@ -12,6 +12,12 @@ use Symfony\Component\Console\Input\InputArgument;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
 
+/**
+ * Commande de test pour déclencher manuellement un scan complet sur un dépôt Git.
+ *
+ * Utile pour valider de bout en bout le pipeline de sécurité (`ScanManager`)
+ * directement depuis la ligne de commande, sans passer par l'API ou le frontend.
+ */
 #[AsCommand(
     name: 'app:test-scan',
     description: 'Lance un scan de sécurité sur un dépôt Git et enregistre les résultats en base.',
@@ -33,6 +39,13 @@ class TestScanCommand extends Command
             ->addArgument('name', InputArgument::OPTIONAL, 'Nom du projet (optionnel)');
     }
 
+    /**
+     * Crée ou réutilise un `Project` à partir de l'URL fournie, lance un scan via
+     * `ScanManager` puis affiche un résumé synthétique (statut, score global, nb de findings).
+     *
+     * Cette commande est pensée comme un scénario "end-to-end" minimal pour vérifier que
+     * la chaîne complète (clone du dépôt, outils externes, persistance Doctrine) fonctionne.
+     */
     protected function execute(InputInterface $input, OutputInterface $output): int
     {
         try {

@@ -11,6 +11,15 @@ use Symfony\Component\Process\Exception\ProcessFailedException;
 use Symfony\Component\Process\Process;
 use Symfony\Component\Uid\Uuid;
 
+/**
+ * Orchestrateur central du pipeline de scan de sécurité.
+ *
+ * Cette classe s'occupe de :
+ * - cloner le dépôt Git à analyser,
+ * - exécuter les outils externes (Semgrep, TruffleHog, audits de dépendances npm/composer),
+ * - transformer leurs sorties brutes en entités métier (`Scan`, `Finding`, `Remediation`),
+ * - calculer un score global et le rattacher au scan.
+ */
 class ScanManager
 {
     public function __construct(
@@ -18,6 +27,13 @@ class ScanManager
     ) {
     }
 
+    /**
+     * Lance un scan complet pour le projet donné et persiste toutes les entités liées.
+     *
+     * Cette méthode coordonne les différentes étapes (clone, détection de l'outil de dépendances,
+     * exécution des scanners, calcul du score). En cas d'erreur technique, le statut du scan passe
+     * à `failed` mais l'entité reste persistée pour permettre un diagnostic a posteriori.
+     */
     public function startScan(Project $project): Scan
     {
         $scan = new Scan();
@@ -46,7 +62,8 @@ class ScanManager
             $scan->setGlobalScore(number_format($score, 2, '.', ''))
                 ->setStatus('completed');
         } catch (\Throwable $e) {
-            // Log technique directement dans le terminal (stderr)
+            // Log technique directement dans le terminal (stderr) pour faciliter le debug
+            // lors d'une exécution en CLI / dans un container, indépendamment du logger Symfony.
             if (\defined('STDERR')) {
                 fwrite(STDERR, "\n!!! ERREUR DÉTECTÉE : " . $e->getMessage() . "\n");
 
@@ -67,6 +84,12 @@ class ScanManager
         return $scan;
     }
 
+    /**
+     * Prépare un répertoire de travail isolé (dans /tmp/scans) pour ce scan.
+     *
+     * L'utilisation d'un dossier unique par scan (UUID) évite les collisions entre exécutions
+     * parallèles et limite les effets de bord entre différents dépôts analysés.
+     */
     private function prepareWorkdir(): string
     {
         $baseDir = '/tmp/scans';
@@ -80,6 +103,12 @@ class ScanManager
         return $scanDir;
     }
 
+    /**
+     * Clone le dépôt Git du projet dans le répertoire de travail dédié.
+     *
+     * On laisse Git choisir la branche par défaut du dépôt pour rester générique et réduire
+     * le temps de clone avec `--depth 1`.
+     */
     private function cloneRepository(Project $project, string $targetDir): void
     {
         // On enlève --branch pour laisser Git choisir la branche par défaut du dépôt
@@ -99,6 +128,10 @@ class ScanManager
         }
     }
 
+    /**
+     * Détecte le gestionnaire de dépendances principal du projet
+     * en se basant sur la présence de fichiers connus (package.json, composer.json).
+     */
     private function detectDependencyTool(string $workdir): ?string
     {
         if (file_exists($workdir . '/package.json')) {
@@ -112,6 +145,12 @@ class ScanManager
         return null;
     }
 
+    /**
+     * Exécute Semgrep avec la configuration par défaut et retourne la sortie JSON décodée.
+     *
+     * Le travail de mise en forme (mappage vers `Finding`, sévérité, catégorie OWASP)
+     * est délégué à `processSemgrepResults`.
+     */
     private function runSemgrep(string $workdir): ?array
     {
         $process = new Process([
@@ -133,6 +172,12 @@ class ScanManager
         return json_decode($output, true) ?? null;
     }
 
+    /**
+     * Exécute TruffleHog en mode "filesystem" et agrège chaque ligne JSON en tableau PHP.
+     *
+     * TruffleHog écrit un objet JSON par ligne ; on recompose donc une liste exploitable
+     * pour la suite du pipeline.
+     */
     private function runTrufflehog(string $workdir): ?array
     {
         $process = new Process([
@@ -160,6 +205,12 @@ class ScanManager
         return $results;
     }
 
+    /**
+     * Lance un audit de dépendances en fonction de l'écosystème détecté (npm ou composer).
+     *
+     * Pour npm, le code de retour 1 signifie "vulnérabilités trouvées" et n'est pas considéré
+     * comme une erreur technique ; pour composer en revanche, tout échec déclenche une exception.
+     */
     private function runDependencyAudit(string $workdir, ?string $tool): ?array
     {
         if ($tool === null) {
@@ -192,6 +243,13 @@ class ScanManager
         return json_decode($output, true) ?? null;
     }
 
+    /**
+     * Transforme les résultats Semgrep en entités `Finding` rattachées au `Scan`.
+     *
+     * Cette méthode centralise également la normalisation de la sévérité et
+     * le mapping vers une catégorie OWASP, afin d'avoir une vue homogène
+     * quel que soit le rule-set utilisé.
+     */
     private function processSemgrepResults(?array $data, Scan $scan): void
     {
         if (!is_array($data) || !isset($data['results']) || !is_array($data['results'])) {
@@ -219,6 +277,12 @@ class ScanManager
         }
     }
 
+    /**
+     * Transforme les résultats TruffleHog (détection de secrets) en `Finding`.
+     *
+     * Tous ces findings sont considérés comme haute sévérité et mappés sur OWASP A04,
+     * ce qui permet de générer des recommandations ciblées.
+     */
     private function processTrufflehogResults(?array $results, Scan $scan): void
     {
         if (!is_array($results)) {
@@ -244,6 +308,14 @@ class ScanManager
         }
     }
 
+    /**
+     * Interprète les audits de dépendances npm/composer et crée des `Finding` correspondants.
+     *
+     * Le code supporte à la fois :
+     * - le nouveau format de `npm audit` (clé `vulnerabilities`),
+     * - l'ancien format (clé `advisories`),
+     * - le format JSON de `composer audit`.
+     */
     private function processDependencyResults(?array $data, Scan $scan, ?string $tool): void
     {
         if (!is_array($data) || $tool === null) {
@@ -348,6 +420,12 @@ class ScanManager
         }
     }
 
+    /**
+     * Normalise la sévérité en un niveau unique (CRITICAL/HIGH/MEDIUM/LOW/INFO).
+     *
+     * Permet de consolider des sources hétérogènes (Semgrep, npm, composer, TruffleHog)
+     * avant de calculer le score global.
+     */
     private function normalizeSeverity(string $severity): string
     {
         $normalized = strtoupper($severity);
@@ -357,6 +435,12 @@ class ScanManager
         };
     }
 
+    /**
+     * Essaie de déduire une catégorie OWASP à partir d'un résultat Semgrep.
+     *
+     * Le mapping est volontairement simple (basé sur le message et l'identifiant de règle)
+     * mais permet déjà de regrouper les findings par grandes familles de vulnérabilités.
+     */
     private function mapToOwaspCategoryFromSemgrep(array $result): ?string
     {
         $message = strtolower((string) ($result['extra']['message'] ?? ''));
@@ -385,6 +469,12 @@ class ScanManager
         return null;
     }
 
+    /**
+     * Déduit une catégorie OWASP à partir d'un advisory de dépendance (npm ou composer).
+     *
+     * On utilise ici un heuristique basé sur le titre / la description, ce qui permet
+     * de rester compatible avec plusieurs formats d'output.
+     */
     private function mapToOwaspCategoryFromDependency(array $advisory): ?string
     {
         $title = strtolower((string) ($advisory['title'] ?? ''));
@@ -409,6 +499,12 @@ class ScanManager
         return null;
     }
 
+    /**
+     * Crée automatiquement une entité `Remediation` pour certains types de findings.
+     *
+     * L'objectif est de fournir immédiatement une piste de correction pour l'utilisateur,
+     * sans nécessiter un moteur de recommandations complexe.
+     */
     private function maybeCreateRemediation(Finding $finding): void
     {
         $owasp = $finding->getOwaspCategory();
@@ -432,6 +528,12 @@ class ScanManager
         $this->entityManager->persist($remediation);
     }
 
+    /**
+     * Calcule un score global sur 100 en appliquant une pénalité par finding.
+     *
+     * On part d'un score parfait (100) et on applique une pénalité pondérée selon
+     * la sévérité, puis on borne le résultat entre 0 et 100 pour rester lisible.
+     */
     private function computeScore(Scan $scan): float
     {
         $baseScore = 100.0;
@@ -450,6 +552,12 @@ class ScanManager
         return $baseScore;
     }
 
+    /**
+     * Retourne la pénalité à appliquer au score en fonction de la sévérité.
+     *
+     * Cette fonction est séparée pour permettre d'ajuster facilement la pondération
+     * sans toucher au reste de l'algorithme de scoring.
+     */
     private function penaltyForSeverity(string $severity): float
     {
         return match (strtoupper($severity)) {
