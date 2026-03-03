@@ -30,6 +30,9 @@ class Scan
     #[ORM\Column(type: 'string', length: 50)]
     private string $status = 'pending';
 
+    #[ORM\Column(type: 'string', length: 500, nullable: true)]
+    private ?string $workdir = null;
+
     /** @var Collection<int, Finding> */
     #[ORM\OneToMany(targetEntity: Finding::class, mappedBy: 'scan', cascade: ['remove'])]
     private Collection $findings;
@@ -81,6 +84,17 @@ class Scan
     public function setStatus(string $status): static
     {
         $this->status = $status;
+        return $this;
+    }
+
+    public function getWorkdir(): ?string
+    {
+        return $this->workdir;
+    }
+
+    public function setWorkdir(?string $workdir): static
+    {
+        $this->workdir = $workdir;
         return $this;
     }
 
