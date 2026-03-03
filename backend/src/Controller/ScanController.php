@@ -1,0 +1,242 @@
+<?php
+
+namespace App\Controller;
+
+use App\Entity\Project;
+use App\Entity\User;
+use App\Repository\ScanRepository;
+use App\Service\GitIntegrationService;
+use App\Service\ReportGenerator;
+use App\Service\ScanManager;
+use Doctrine\ORM\EntityManagerInterface;
+use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
+use Symfony\Component\HttpFoundation\BinaryFileResponse;
+use Symfony\Component\HttpFoundation\JsonResponse;
+use Symfony\Component\HttpFoundation\Request;
+use Symfony\Component\HttpFoundation\ResponseHeaderBag;
+use Symfony\Component\Routing\Attribute\Route;
+
+#[Route('/api/scans')]
+class ScanController extends AbstractController
+{
+    public function __construct(
+        private readonly ScanManager $scanManager,
+        private readonly ScanRepository $scanRepository,
+        private readonly GitIntegrationService $gitIntegrationService,
+        private readonly ReportGenerator $reportGenerator,
+        private readonly EntityManagerInterface $entityManager,
+    ) {
+    }
+
+    #[Route('', methods: ['POST'])]
+    public function create(Request $request): JsonResponse
+    {
+        $payload = json_decode($request->getContent(), true);
+        $repoUrl = $payload['repositoryUrl'] ?? $payload['repoUrl'] ?? null;
+        $projectId = $payload['projectId'] ?? null;
+
+        if (!$repoUrl && !$projectId) {
+            return $this->json(['error' => 'repositoryUrl or projectId is required'], 400);
+        }
+
+        if ($projectId) {
+            $project = $this->entityManager->getRepository(Project::class)->find($projectId);
+            if (!$project) {
+                return $this->json(['error' => 'Project not found'], 404);
+            }
+        } else {
+            // Find or create project from URL
+            $project = $this->entityManager->getRepository(Project::class)
+                ->findOneBy(['repositoryUrl' => $repoUrl]);
+
+            if (!$project) {
+                $name = $this->extractProjectName($repoUrl);
+                $project = new Project();
+                $project->setName($name);
+                $project->setRepositoryUrl($repoUrl);
+                $this->entityManager->persist($project);
+                $this->entityManager->flush();
+            }
+        }
+
+        $scan = $this->scanManager->startScan($project);
+
+        return $this->json([
+            'id' => $scan->getId(),
+            'projectId' => $project->getId(),
+            'status' => $scan->getStatus(),
+            'globalScore' => $scan->getGlobalScore(),
+            'executedAt' => $scan->getExecutedAt()->format('c'),
+            'findingsCount' => $scan->getFindings()->count(),
+        ], 201);
+    }
+
+    #[Route('/{id}', methods: ['GET'])]
+    public function show(string $id): JsonResponse
+    {
+        $scan = $this->scanRepository->find($id);
+
+        if (!$scan) {
+            return $this->json(['error' => 'Scan not found'], 404);
+        }
+
+        $findings = [];
+        foreach ($scan->getFindings() as $finding) {
+            $remediation = $finding->getRemediation();
+            $findings[] = [
+                'id' => $finding->getId(),
+                'toolSource' => $finding->getToolSource(),
+                'severity' => $finding->getSeverity(),
+                'owaspCategory' => $finding->getOwaspCategory(),
+                'filePath' => $finding->getFilePath(),
+                'lineNumber' => $finding->getLineNumber(),
+                'description' => $finding->getDescription(),
+                'rawCode' => $finding->getRawCode(),
+                'remediation' => $remediation ? [
+                    'proposedFix' => $remediation->getProposedFix(),
+                    'status' => $remediation->getStatus(),
+                    'gitBranchName' => $remediation->getGitBranchName(),
+                    'prUrl' => $remediation->getPrUrl(),
+                ] : null,
+            ];
+        }
+
+        return $this->json([
+            'id' => $scan->getId(),
+            'project' => [
+                'id' => $scan->getProject()->getId(),
+                'name' => $scan->getProject()->getName(),
+                'repositoryUrl' => $scan->getProject()->getRepositoryUrl(),
+            ],
+            'executedAt' => $scan->getExecutedAt()->format('c'),
+            'globalScore' => $scan->getGlobalScore(),
+            'status' => $scan->getStatus(),
+            'findings' => $findings,
+        ]);
+    }
+
+    #[Route('/{id}/findings', methods: ['GET'])]
+    public function findings(string $id, Request $request): JsonResponse
+    {
+        $scan = $this->scanRepository->find($id);
+
+        if (!$scan) {
+            return $this->json(['error' => 'Scan not found'], 404);
+        }
+
+        $severity = $request->query->get('severity');
+        $tool = $request->query->get('tool');
+        $owasp = $request->query->get('owasp');
+
+        $findings = [];
+        foreach ($scan->getFindings() as $finding) {
+            if ($severity && strtoupper($finding->getSeverity()) !== strtoupper($severity)) {
+                continue;
+            }
+            if ($tool && $finding->getToolSource() !== $tool) {
+                continue;
+            }
+            if ($owasp && $finding->getOwaspCategory() !== $owasp) {
+                continue;
+            }
+
+            $remediation = $finding->getRemediation();
+            $findings[] = [
+                'id' => $finding->getId(),
+                'toolSource' => $finding->getToolSource(),
+                'severity' => $finding->getSeverity(),
+                'owaspCategory' => $finding->getOwaspCategory(),
+                'filePath' => $finding->getFilePath(),
+                'lineNumber' => $finding->getLineNumber(),
+                'description' => $finding->getDescription(),
+                'rawCode' => $finding->getRawCode(),
+                'remediation' => $remediation ? [
+                    'proposedFix' => $remediation->getProposedFix(),
+                    'status' => $remediation->getStatus(),
+                    'gitBranchName' => $remediation->getGitBranchName(),
+                    'prUrl' => $remediation->getPrUrl(),
+                ] : null,
+            ];
+        }
+
+        return $this->json($findings);
+    }
+
+    #[Route('/{id}/apply-fixes', methods: ['POST'])]
+    public function applyFixes(string $id): JsonResponse
+    {
+        $scan = $this->scanRepository->find($id);
+
+        if (!$scan) {
+            return $this->json(['error' => 'Scan not found'], 404);
+        }
+
+        $workdir = $scan->getWorkdir();
+        if (!$workdir || !is_dir($workdir)) {
+            return $this->json(['error' => 'Scan workdir not available'], 400);
+        }
+
+        $user = $this->getUser();
+        $token = $user instanceof User ? $user->getGithubToken() : null;
+
+        $result = $this->gitIntegrationService->applyAndPush($scan, $workdir, $token);
+
+        return $this->json([
+            'branch' => $result['branch'],
+            'prUrl' => $result['prUrl'],
+        ]);
+    }
+
+    #[Route('/{id}/report', methods: ['GET'])]
+    public function report(string $id): BinaryFileResponse|JsonResponse
+    {
+        $scan = $this->scanRepository->find($id);
+
+        if (!$scan) {
+            return $this->json(['error' => 'Scan not found'], 404);
+        }
+
+        $outputDir = '/var/www/html/public/reports';
+        if (!is_dir($outputDir)) {
+            @mkdir($outputDir, 0777, true);
+        }
+
+        $pdfPath = $this->reportGenerator->generatePdfReport($scan, $outputDir);
+
+        $response = new BinaryFileResponse($pdfPath);
+        $response->setContentDisposition(ResponseHeaderBag::DISPOSITION_INLINE, basename($pdfPath));
+        $response->headers->set('Content-Type', 'application/pdf');
+
+        return $response;
+    }
+
+    #[Route('/recent', methods: ['GET'], priority: 10)]
+    public function recent(): JsonResponse
+    {
+        $scans = $this->scanRepository->findBy([], ['executedAt' => 'DESC'], 10);
+
+        $data = array_map(fn ($scan) => [
+            'id' => $scan->getId(),
+            'project' => [
+                'id' => $scan->getProject()->getId(),
+                'name' => $scan->getProject()->getName(),
+                'repositoryUrl' => $scan->getProject()->getRepositoryUrl(),
+            ],
+            'executedAt' => $scan->getExecutedAt()->format('c'),
+            'globalScore' => $scan->getGlobalScore(),
+            'status' => $scan->getStatus(),
+            'findingsCount' => $scan->getFindings()->count(),
+        ], $scans);
+
+        return $this->json($data);
+    }
+
+    private function extractProjectName(string $repoUrl): string
+    {
+        if (preg_match('#/([^/]+?)(?:\.git)?$#', $repoUrl, $matches)) {
+            return $matches[1];
+        }
+
+        return 'Unknown Project';
+    }
+}
