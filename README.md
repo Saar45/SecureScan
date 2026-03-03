@@ -48,19 +48,19 @@ docker compose down -v     # Arrêter + supprimer les volumes (reset BDD)
 
 ### Variables d'environnement
 
-Fichier `.env` à la racine :
+Fichier `.env.example` à copier en `.env` :
 
-| Variable               | Description                                        | Défaut                  |
-|------------------------|----------------------------------------------------|-------------------------|
-| `MYSQL_ROOT_PASSWORD`  | Mot de passe root MySQL                            | `root_password`         |
-| `MYSQL_DATABASE`       | Base applicative                                   | `security_scanner`      |
-| `MYSQL_USER`           | Utilisateur MySQL                                  | `scanner_user`          |
-| `MYSQL_PASSWORD`       | Mot de passe MySQL                                 | `scanner_password`      |
-| `APP_ENV`              | Environnement Symfony                              | `dev`                   |
-| `APP_SECRET`           | Secret Symfony                                     | *(généré)*              |
-| `CORS_ALLOW_ORIGIN`    | Origine CORS autorisée                             | `http://localhost:3000` |
-| `GIT_TOKEN`            | GitHub PAT pour push authentifié (scope `repo`)    | *(vide)*                |
-| `VITE_API_URL`         | URL de l'API pour le frontend                      | `http://localhost:8080` |
+| Variable               | Description                                        | Valeur par défaut              |
+|------------------------|----------------------------------------------------|--------------------------------|
+| `MYSQL_ROOT_PASSWORD`  | Mot de passe root MySQL                            | `your_root_password`           |
+| `MYSQL_DATABASE`       | Base applicative                                   | `security_scanner`             |
+| `MYSQL_USER`           | Utilisateur MySQL                                  | `your_user`                    |
+| `MYSQL_PASSWORD`       | Mot de passe MySQL                                 | `your_password`                |
+| `APP_ENV`              | Environnement Symfony                              | `dev`                          |
+| `APP_SECRET`           | Secret Symfony                                     | `change_me_to_a_random_secret` |
+| `CORS_ALLOW_ORIGIN`    | Origine CORS autorisée                             | `http://localhost:3000`        |
+| `GIT_TOKEN`            | GitHub PAT pour push authentifié (scope `repo`)    | *(vide)*                       |
+| `VITE_API_URL`         | URL de l'API pour le frontend                      | `http://localhost:8080`        |
 
 ---
 
