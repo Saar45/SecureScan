@@ -7,6 +7,7 @@ use App\Entity\Project;
 use App\Entity\Remediation;
 use App\Entity\Scan;
 use Doctrine\ORM\EntityManagerInterface;
+use Psr\Log\LoggerInterface;
 use Symfony\Component\Process\Exception\ProcessFailedException;
 use Symfony\Component\Process\Process;
 use Symfony\Component\Uid\Uuid;
@@ -22,8 +23,22 @@ use Symfony\Component\Uid\Uuid;
  */
 class ScanManager
 {
+    /**
+     * Environment variables passed to every subprocess.
+     * Ensures tools (semgrep, npm, composer, trufflehog, git) can find their
+     * config/cache directories when running as www-data under Apache.
+     */
+    private const PROCESS_ENV = [
+        'HOME' => '/var/www',
+        'COMPOSER_HOME' => '/var/www/.composer',
+        'npm_config_cache' => '/var/www/.npm',
+        'SEMGREP_SETTINGS_FILE' => '/var/www/.semgrep/settings.yml',
+        'PATH' => '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin',
+    ];
+
     public function __construct(
         private readonly EntityManagerInterface $entityManager,
+        private readonly LoggerInterface $logger,
     ) {
     }
 
@@ -51,11 +66,12 @@ class ScanManager
 
             $dependencyTool = $this->detectDependencyTool($workdir);
 
-            $semgrepOutput = $this->runSemgrep($workdir);
-            $trufflehogOutput = $this->runTrufflehog($workdir);
-            $dependencyOutput = $this->runDependencyAudit($workdir, $dependencyTool);
+            // Run each tool independently — one failure should not abort the others.
+            $semgrepOutput = $this->runToolSafely('semgrep', fn () => $this->runSemgrep($workdir));
+            $trufflehogOutput = $this->runToolSafely('trufflehog', fn () => $this->runTrufflehog($workdir));
+            $dependencyOutput = $this->runToolSafely('dependency-audit', fn () => $this->runDependencyAudit($workdir, $dependencyTool));
 
-            $this->processSemgrepResults($semgrepOutput, $scan);
+            $this->processSemgrepResults($semgrepOutput, $scan, $workdir);
             $this->processTrufflehogResults($trufflehogOutput, $scan);
             $this->processDependencyResults($dependencyOutput, $scan, $dependencyTool);
 
@@ -63,8 +79,11 @@ class ScanManager
             $scan->setGlobalScore(number_format($score, 2, '.', ''))
                 ->setStatus('completed');
         } catch (\Throwable $e) {
-            // Log technique directement dans le terminal (stderr) pour faciliter le debug
-            // lors d'une exécution en CLI / dans un container, indépendamment du logger Symfony.
+            $this->logger->error('Scan failed: ' . $e->getMessage(), [
+                'exception' => $e,
+                'scanId' => $scan->getId(),
+            ]);
+
             if (\defined('STDERR')) {
                 fwrite(STDERR, "\n!!! ERREUR DÉTECTÉE : " . $e->getMessage() . "\n");
 
@@ -105,6 +124,25 @@ class ScanManager
     }
 
     /**
+     * Wraps a tool execution so that if it fails, the error is logged
+     * and null is returned instead of aborting the entire scan.
+     */
+    private function runToolSafely(string $toolName, callable $fn): ?array
+    {
+        try {
+            return $fn();
+        } catch (\Throwable $e) {
+            $this->logger->warning(sprintf(
+                'Tool "%s" failed but scan continues: %s',
+                $toolName,
+                $e->getMessage()
+            ));
+
+            return null;
+        }
+    }
+
+    /**
      * Clone le dépôt Git du projet dans le répertoire de travail dédié.
      *
      * On laisse Git choisir la branche par défaut du dépôt pour rester générique et réduire
@@ -120,13 +158,24 @@ class ScanManager
             '1',
             $project->getRepositoryUrl(),
             $targetDir,
-        ]);
+        ], null, self::PROCESS_ENV);
         $process->setTimeout(300);
         $process->run();
 
         if (!$process->isSuccessful()) {
             throw new ProcessFailedException($process);
         }
+
+        // Mark directory as safe to avoid "dubious ownership" errors
+        $safeDir = new Process([
+            '/usr/bin/git',
+            'config',
+            '--global',
+            'safe.directory',
+            $targetDir,
+        ], null, self::PROCESS_ENV);
+        $safeDir->setTimeout(10);
+        $safeDir->run();
     }
 
     /**
@@ -158,13 +207,15 @@ class ScanManager
             'python3',
             '/usr/local/bin/semgrep',
             '--config',
-            'p/default',
+            'auto',
             '--json',
-        ], $workdir);
+        ], $workdir, self::PROCESS_ENV);
         $process->setTimeout(600);
         $process->run();
 
-        if (!$process->isSuccessful()) {
+        // Exit code 0 = no findings, 2 = findings found or some files skipped.
+        // Both are valid — semgrep still produces usable JSON output.
+        if (!$process->isSuccessful() && $process->getExitCode() !== 2) {
             throw new ProcessFailedException($process);
         }
 
@@ -186,12 +237,19 @@ class ScanManager
             'filesystem',
             $workdir,
             '--json',
-        ]);
+            '--no-update',
+        ], null, self::PROCESS_ENV);
         $process->setTimeout(600);
         $process->run();
 
+        // TruffleHog may exit with non-zero code when secrets are found
+        // but still produces valid JSON output — only fail on serious errors.
         if (!$process->isSuccessful()) {
-            throw new ProcessFailedException($process);
+            $output = $process->getOutput();
+            // If there's JSON output, trufflehog ran but found things — that's fine
+            if (empty(trim($output))) {
+                throw new ProcessFailedException($process);
+            }
         }
 
         $lines = array_filter(explode("\n", $process->getOutput()));
@@ -219,22 +277,22 @@ class ScanManager
         }
 
         if ($tool === 'npm') {
-            $process = new Process(['/usr/bin/npm', 'audit', '--json'], $workdir);
+            $process = new Process(['/usr/bin/npm', 'audit', '--json'], $workdir, self::PROCESS_ENV);
         } else {
-            $process = new Process(['composer', 'audit', '--format=json'], $workdir);
+            $process = new Process(['/usr/bin/composer', 'audit', '--format=json', '--no-interaction'], $workdir, self::PROCESS_ENV);
         }
 
         $process->setTimeout(600);
         $process->run();
 
         if ($tool === 'npm') {
-            // npm audit utilise le code de sortie 1 pour signaler des vulnérabilités trouvées,
-            // ce n'est pas une erreur d'exécution, donc on l'accepte.
+            // npm audit uses exit code 1 to signal "vulnerabilities found" — not a crash.
             if (!$process->isSuccessful() && $process->getExitCode() !== 1) {
                 throw new ProcessFailedException($process);
             }
         } else {
-            if (!$process->isSuccessful()) {
+            // composer audit uses exit code 1 when vulnerabilities are found — not a crash.
+            if (!$process->isSuccessful() && $process->getExitCode() !== 1) {
                 throw new ProcessFailedException($process);
             }
         }
@@ -251,13 +309,29 @@ class ScanManager
      * le mapping vers une catégorie OWASP, afin d'avoir une vue homogène
      * quel que soit le rule-set utilisé.
      */
-    private function processSemgrepResults(?array $data, Scan $scan): void
+    private function processSemgrepResults(?array $data, Scan $scan, string $workdir = ''): void
     {
         if (!is_array($data) || !isset($data['results']) || !is_array($data['results'])) {
             return;
         }
 
         foreach ($data['results'] as $result) {
+            // Semgrep may redact code snippets behind "requires login".
+            // Fall back to reading the source file directly when that happens.
+            $rawCode = $result['extra']['lines'] ?? null;
+            if ($rawCode === 'requires login' || $rawCode === null) {
+                $path = $result['path'] ?? '';
+                // Semgrep paths are relative to cwd — prepend workdir for absolute path
+                $absPath = ($workdir && $path && !str_starts_with($path, '/'))
+                    ? rtrim($workdir, '/') . '/' . $path
+                    : $path;
+                $rawCode = $this->readSourceLines(
+                    $absPath,
+                    $result['start']['line'] ?? null,
+                    $result['end']['line'] ?? null
+                );
+            }
+
             $finding = new Finding();
             $finding
                 ->setScan($scan)
@@ -266,7 +340,7 @@ class ScanManager
                 ->setFilePath($result['path'] ?? '')
                 ->setLineNumber($result['start']['line'] ?? null)
                 ->setDescription($result['extra']['message'] ?? 'Semgrep finding')
-                ->setRawCode($result['extra']['lines'] ?? null);
+                ->setRawCode($rawCode);
 
             $owasp = $this->mapToOwaspCategoryFromSemgrep($result);
             $finding->setOwaspCategory($owasp);
@@ -419,6 +493,31 @@ class ScanManager
                 }
             }
         }
+    }
+
+    /**
+     * Reads source code lines from a file on disk.
+     * Used as fallback when semgrep redacts the code snippet ("requires login").
+     */
+    private function readSourceLines(string $filePath, ?int $startLine, ?int $endLine): ?string
+    {
+        if (!$filePath || !$startLine || !is_file($filePath)) {
+            return null;
+        }
+
+        $lines = @file($filePath);
+        if ($lines === false) {
+            return null;
+        }
+
+        $end = $endLine ?? $startLine;
+        // Add 2 lines of context before and after
+        $from = max(0, $startLine - 3);
+        $to = min(count($lines) - 1, $end + 1);
+
+        $snippet = array_slice($lines, $from, $to - $from + 1);
+
+        return rtrim(implode('', $snippet));
     }
 
     /**
