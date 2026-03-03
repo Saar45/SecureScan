@@ -39,7 +39,6 @@ class GitIntegrationService
         $this->createBranch($workdir, $branchName);
 
         $this->applyAiFixes($workdir, $remediations);
-        $this->writeRemediationFiles($workdir, $remediations);
 
         $this->commitChanges($workdir, $scan);
         $this->pushBranch($workdir, $branchName);
@@ -88,9 +87,23 @@ class GitIntegrationService
         });
 
         $applied = 0;
+        $apiCalls = 0;
+        $log = function (string $msg): void {
+            if (\defined('STDERR')) {
+                fwrite(STDERR, "[AI-FIX] $msg\n");
+            }
+        };
+
+        // Only apply AI fixes to Semgrep findings (actual source code vulnerabilities)
+        $candidates = array_filter($candidates, function ($remediation) {
+            return $remediation->getFinding()->getToolSource() === 'semgrep';
+        });
+        $candidates = array_values($candidates);
+
+        $log(sprintf('Candidates (source code only): %d', \count($candidates)));
 
         foreach ($candidates as $remediation) {
-            if ($applied >= self::MAX_AI_FIXES) {
+            if ($apiCalls >= self::MAX_AI_FIXES) {
                 break;
             }
 
@@ -99,31 +112,61 @@ class GitIntegrationService
             $rawCode = $finding->getRawCode();
 
             if ($filePath === '' || $rawCode === null || trim($rawCode) === '') {
+                $log(sprintf('SKIP (no code): %s', $filePath));
                 continue;
             }
 
             $fullPath = $workdir . '/' . $filePath;
             if (!file_exists($fullPath)) {
+                $log(sprintf('SKIP (file not found): %s', $fullPath));
                 continue;
             }
+
+            $log(sprintf('Calling AI for: %s (line %s, rawCode: %d chars)', $filePath, $finding->getLineNumber() ?? '?', \strlen($rawCode)));
+            $apiCalls++;
 
             $fixedCode = $this->aiFixService->generateFix($finding);
             if ($fixedCode === null || trim($fixedCode) === '') {
+                $log('SKIP (AI returned null)');
                 continue;
             }
+
+            $log(sprintf('AI returned fix: %d chars', \strlen($fixedCode)));
 
             $fileContent = file_get_contents($fullPath);
             if ($fileContent === false) {
+                $log('SKIP (cannot read file)');
                 continue;
             }
 
-            // Replace the vulnerable code snippet with the AI-generated fix
-            $newContent = str_replace(trim($rawCode), $fixedCode, $fileContent);
-            if ($newContent !== $fileContent) {
-                file_put_contents($fullPath, $newContent);
-                $applied++;
+            $lineNumber = $finding->getLineNumber();
+            if ($lineNumber !== null) {
+                // Replace the specific line using the line number
+                $lines = explode("\n", $fileContent);
+                $lineIndex = $lineNumber - 1;
+                if (isset($lines[$lineIndex])) {
+                    $lines[$lineIndex] = $fixedCode;
+                    $newContent = implode("\n", $lines);
+                    file_put_contents($fullPath, $newContent);
+                    $applied++;
+                    $log(sprintf('APPLIED fix #%d to %s:%d', $applied, $filePath, $lineNumber));
+                } else {
+                    $log(sprintf('SKIP (line %d out of range, file has %d lines)', $lineNumber, \count($lines)));
+                }
+            } else {
+                // Fallback: try str_replace for findings without line numbers
+                $newContent = str_replace(trim($rawCode), $fixedCode, $fileContent);
+                if ($newContent !== $fileContent) {
+                    file_put_contents($fullPath, $newContent);
+                    $applied++;
+                    $log(sprintf('APPLIED fix #%d to %s', $applied, $filePath));
+                } else {
+                    $log(sprintf('SKIP (str_replace no match) rawCode: [%s]', substr(trim($rawCode), 0, 80)));
+                }
             }
         }
+
+        $log(sprintf('Done: %d API calls, %d fixes applied', $apiCalls, $applied));
     }
 
     /**

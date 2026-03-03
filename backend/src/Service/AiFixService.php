@@ -7,7 +7,8 @@ use Symfony\Contracts\HttpClient\HttpClientInterface;
 
 class AiFixService
 {
-    private const GEMINI_ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent';
+    private const GROQ_ENDPOINT = 'https://api.groq.com/openai/v1/chat/completions';
+    private const MODEL = 'llama-3.3-70b-versatile';
 
     public function __construct(
         private readonly HttpClientInterface $httpClient,
@@ -15,13 +16,13 @@ class AiFixService
     }
 
     /**
-     * Calls the Gemini API to generate a corrected version of vulnerable code.
+     * Calls the Groq API (Llama 3.3 70B) to generate a corrected version of vulnerable code.
      *
      * Returns the fixed code string, or null if the API key is missing or the call fails.
      */
     public function generateFix(Finding $finding): ?string
     {
-        $apiKey = $_ENV['GEMINI_API_KEY'] ?? $_SERVER['GEMINI_API_KEY'] ?? '';
+        $apiKey = $_ENV['GROQ_API_KEY'] ?? $_SERVER['GROQ_API_KEY'] ?? '';
         if ($apiKey === '') {
             return null;
         }
@@ -34,32 +35,39 @@ class AiFixService
         $prompt = $this->buildPrompt($finding);
 
         try {
-            $response = $this->httpClient->request('POST', self::GEMINI_ENDPOINT, [
-                'query' => ['key' => $apiKey],
+            $response = $this->httpClient->request('POST', self::GROQ_ENDPOINT, [
+                'headers' => [
+                    'Authorization' => sprintf('Bearer %s', $apiKey),
+                ],
                 'json' => [
-                    'contents' => [
+                    'model' => self::MODEL,
+                    'messages' => [
                         [
-                            'parts' => [
-                                ['text' => $prompt],
-                            ],
+                            'role' => 'system',
+                            'content' => 'You are a security expert. You fix vulnerable code. Return ONLY the corrected code, without any explanation, markdown fences, or surrounding text.',
+                        ],
+                        [
+                            'role' => 'user',
+                            'content' => $prompt,
                         ],
                     ],
-                    'generationConfig' => [
-                        'temperature' => 0.2,
-                        'maxOutputTokens' => 2048,
-                    ],
+                    'temperature' => 0.2,
+                    'max_tokens' => 2048,
                 ],
             ]);
 
             $data = $response->toArray();
 
-            $text = $data['candidates'][0]['content']['parts'][0]['text'] ?? null;
+            $text = $data['choices'][0]['message']['content'] ?? null;
             if ($text === null) {
                 return null;
             }
 
             return $this->extractCode($text);
-        } catch (\Throwable) {
+        } catch (\Throwable $e) {
+            if (\defined('STDERR')) {
+                fwrite(STDERR, sprintf("[AI-FIX-ERROR] %s\n", $e->getMessage()));
+            }
             return null;
         }
     }
@@ -67,7 +75,6 @@ class AiFixService
     private function buildPrompt(Finding $finding): string
     {
         $parts = [];
-        $parts[] = 'You are a security expert. Fix the following vulnerable code.';
         $parts[] = sprintf('File: %s', $finding->getFilePath());
 
         if ($finding->getLineNumber() !== null) {
@@ -87,7 +94,7 @@ class AiFixService
         $parts[] = $finding->getRawCode();
         $parts[] = '```';
         $parts[] = '';
-        $parts[] = 'Return ONLY the corrected code, without any explanation, markdown fences, or surrounding text. Output the fixed code and nothing else.';
+        $parts[] = 'Return ONLY the corrected code, without any explanation, markdown fences, or surrounding text.';
 
         return implode("\n", $parts);
     }
