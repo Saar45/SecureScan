@@ -17,6 +17,7 @@ services:
       - APP_SECRET=${APP_SECRET}
       - CORS_ALLOW_ORIGIN=${CORS_ALLOW_ORIGIN}
       - GIT_TOKEN=${GIT_TOKEN}
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
     restart: unless-stopped
 
   frontend:
