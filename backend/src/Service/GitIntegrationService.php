@@ -18,11 +18,12 @@ class GitIntegrationService
 
     /**
      * Applique les remediations (fixes AI + documentation) dans une branche dédiée,
-     * pousse vers le dépôt distant et ouvre une Pull Request si GIT_TOKEN est configuré.
+     * pousse vers le dépôt distant et ouvre une Pull Request si un token est disponible.
      *
+     * @param string|null $userToken OAuth token from the logged-in user (fallback to GIT_TOKEN env)
      * @return array{branch: ?string, prUrl: ?string}
      */
-    public function applyAndPush(Scan $scan, string $workdir): array
+    public function applyAndPush(Scan $scan, string $workdir, ?string $userToken = null): array
     {
         $remediations = $this->collectPendingRemediations($scan);
 
@@ -30,10 +31,36 @@ class GitIntegrationService
             return ['branch' => null, 'prUrl' => null];
         }
 
+        $token = $this->getToken($userToken);
         $shortUuid = substr($scan->getId(), 0, 8);
         $branchName = sprintf('fix/securescan-%s-%s', date('Y-m-d'), $shortUuid);
 
-        $this->injectTokenInRemoteUrl($workdir);
+        $repoUrl = $scan->getProject()->getRepositoryUrl();
+        $ownerRepo = $this->parseOwnerRepo($repoUrl);
+
+        // Decide: push directly (own repo / write access) or fork first (someone else's repo)
+        $forkFullName = null;
+        if ($ownerRepo !== null && $token !== '') {
+            [$owner, $repo] = $ownerRepo;
+
+            if ($this->hasWriteAccess($owner, $repo, $token)) {
+                // Own repo or collaborator — push directly
+                $this->injectTokenInRemoteUrl($workdir, $token);
+            } else {
+                // No write access — fork, then push to the fork
+                $forkFullName = $this->forkRepository($owner, $repo, $token);
+
+                if ($forkFullName !== null) {
+                    $forkUrl = sprintf('https://x-access-token:%s@github.com/%s.git', $token, $forkFullName);
+                    $this->runGit(['git', 'remote', 'set-url', 'origin', $forkUrl], $workdir);
+                } else {
+                    $this->injectTokenInRemoteUrl($workdir, $token);
+                }
+            }
+        } else {
+            $this->injectTokenInRemoteUrl($workdir, $token);
+        }
+
         $this->configureGitIdentity($workdir);
         $this->unshallowIfNeeded($workdir);
         $this->createBranch($workdir, $branchName);
@@ -41,10 +68,9 @@ class GitIntegrationService
         $this->applyAiFixes($workdir, $remediations);
 
         $this->commitChanges($workdir, $scan);
-        $this->pushBranch($workdir, $branchName);
+        $this->pushBranch($workdir, $branchName, $token);
 
-        $repoUrl = $scan->getProject()->getRepositoryUrl();
-        $prUrl = $this->createPullRequest($repoUrl, $branchName, $scan);
+        $prUrl = $this->createPullRequest($repoUrl, $branchName, $scan, $token, $forkFullName);
 
         foreach ($remediations as $remediation) {
             $remediation->setStatus('applied');
@@ -58,6 +84,82 @@ class GitIntegrationService
         $this->entityManager->flush();
 
         return ['branch' => $branchName, 'prUrl' => $prUrl];
+    }
+
+    private function getToken(?string $userToken): string
+    {
+        if ($userToken !== null && $userToken !== '') {
+            return $userToken;
+        }
+
+        return $_ENV['GIT_TOKEN'] ?? $_SERVER['GIT_TOKEN'] ?? '';
+    }
+
+    /**
+     * Checks if the authenticated user has push (write) access to the repository.
+     */
+    private function hasWriteAccess(string $owner, string $repo, string $token): bool
+    {
+        try {
+            $response = $this->httpClient->request('GET', sprintf('https://api.github.com/repos/%s/%s', $owner, $repo), [
+                'headers' => [
+                    'Authorization' => sprintf('Bearer %s', $token),
+                    'Accept' => 'application/vnd.github+json',
+                ],
+            ]);
+
+            $data = $response->toArray();
+
+            return !empty($data['permissions']['push']);
+        } catch (\Throwable) {
+            return false;
+        }
+    }
+
+    /**
+     * Forks a GitHub repository and waits until the fork is ready.
+     */
+    public function forkRepository(string $owner, string $repo, string $token): ?string
+    {
+        try {
+            $response = $this->httpClient->request('POST', sprintf('https://api.github.com/repos/%s/%s/forks', $owner, $repo), [
+                'headers' => [
+                    'Authorization' => sprintf('Bearer %s', $token),
+                    'Accept' => 'application/vnd.github+json',
+                ],
+                'json' => new \stdClass(),
+            ]);
+
+            $data = $response->toArray();
+            $forkFullName = $data['full_name'] ?? null;
+
+            if ($forkFullName === null) {
+                return null;
+            }
+
+            // Poll until fork is ready (max 30 seconds)
+            for ($i = 0; $i < 15; $i++) {
+                sleep(2);
+                try {
+                    $check = $this->httpClient->request('GET', sprintf('https://api.github.com/repos/%s', $forkFullName), [
+                        'headers' => [
+                            'Authorization' => sprintf('Bearer %s', $token),
+                            'Accept' => 'application/vnd.github+json',
+                        ],
+                    ]);
+                    $checkData = $check->toArray();
+                    if (!empty($checkData['id'])) {
+                        return $forkFullName;
+                    }
+                } catch (\Throwable) {
+                    // Fork not ready yet
+                }
+            }
+
+            return $forkFullName;
+        } catch (\Throwable) {
+            return null;
+        }
     }
 
     private const MAX_AI_FIXES = 10;
@@ -171,12 +273,10 @@ class GitIntegrationService
 
     /**
      * Creates a Pull Request on GitHub via the API.
-     *
-     * Returns the PR URL on success, or null if the token is missing or the call fails.
+     * Supports cross-repo PRs when a fork is used.
      */
-    private function createPullRequest(string $repoUrl, string $branchName, Scan $scan): ?string
+    private function createPullRequest(string $repoUrl, string $branchName, Scan $scan, string $token = '', ?string $forkFullName = null): ?string
     {
-        $token = $_ENV['GIT_TOKEN'] ?? $_SERVER['GIT_TOKEN'] ?? '';
         if ($token === '') {
             return null;
         }
@@ -198,8 +298,16 @@ class GitIntegrationService
             $scan->getFindings()->count()
         );
 
-        // Detect the default branch to use as base
         $baseBranch = $this->detectDefaultBranch($owner, $repo, $token);
+
+        // For cross-repo PR: head = "forkOwner:branchName"
+        $head = $branchName;
+        if ($forkFullName !== null) {
+            $forkOwner = explode('/', $forkFullName)[0] ?? '';
+            if ($forkOwner !== '') {
+                $head = sprintf('%s:%s', $forkOwner, $branchName);
+            }
+        }
 
         try {
             $response = $this->httpClient->request('POST', sprintf('https://api.github.com/repos/%s/%s/pulls', $owner, $repo), [
@@ -210,7 +318,7 @@ class GitIntegrationService
                 'json' => [
                     'title' => $title,
                     'body' => $body,
-                    'head' => $branchName,
+                    'head' => $head,
                     'base' => $baseBranch,
                 ],
             ]);
@@ -285,9 +393,8 @@ class GitIntegrationService
         return $remediations;
     }
 
-    private function injectTokenInRemoteUrl(string $workdir): void
+    private function injectTokenInRemoteUrl(string $workdir, string $token = ''): void
     {
-        $token = $_ENV['GIT_TOKEN'] ?? $_SERVER['GIT_TOKEN'] ?? '';
         if ($token === '') {
             return;
         }
@@ -399,9 +506,8 @@ class GitIntegrationService
         $this->runGit(['git', 'commit', '-m', $message], $workdir);
     }
 
-    private function pushBranch(string $workdir, string $branchName): void
+    private function pushBranch(string $workdir, string $branchName, string $token = ''): void
     {
-        $token = $_ENV['GIT_TOKEN'] ?? $_SERVER['GIT_TOKEN'] ?? '';
         if ($token === '') {
             return;
         }
