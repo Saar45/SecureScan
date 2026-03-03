@@ -1,3 +1,4 @@
+-- DEPRECATED: Superseded by Doctrine Migrations (see backend/migrations/).
 CREATE TABLE IF NOT EXISTS `owasp_categories` (
     `code` VARCHAR(10) NOT NULL PRIMARY KEY,
     `name` VARCHAR(255) NOT NULL,

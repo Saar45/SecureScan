@@ -1,3 +1,4 @@
+-- DEPRECATED: Superseded by Doctrine Migrations (see backend/migrations/).
 INSERT INTO `owasp_categories` (`code`, `name`, `description`) VALUES
 ('A01', 'Broken Access Control', 'Restrictions on what authenticated users are allowed to do are often not properly enforced.'),
 ('A02', 'Security Misconfiguration', 'Missing appropriate security hardening across any part of the application stack, or improperly configured permissions.'),

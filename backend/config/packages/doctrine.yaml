@@ -6,6 +6,7 @@ doctrine:
         # either here or in the DATABASE_URL env var (see .env file)
         server_version: '8.0'
         charset: utf8mb4
+        schema_filter: '~^(?!owasp_categories$)~'
 
         profiling_collect_backtrace: '%kernel.debug%'
     orm:
