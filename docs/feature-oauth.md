@@ -144,31 +144,179 @@ Hérite de `AbstractAuthenticator`.
 
 ### `AuthController` (`/api/auth`)
 
-| Route | Méthode | Description |
-|-------|---------|-------------|
-| `/api/auth/github` | GET | Redirige vers la page d'autorisation GitHub |
-| `/api/auth/github/callback` | GET | Géré par l'authenticator (fallback si pas de code) |
-| `/api/auth/me` | GET | Retourne les infos de l'utilisateur connecté (ou 401) |
-| `/api/auth/logout` | POST | Invalidation de session (géré par Symfony security) |
+**`GET /api/auth/github`** — Redirige vers la page d'autorisation GitHub (302).
+
+**`GET /api/auth/github/callback`** — Géré par l'authenticator. Redirige vers `/dashboard` en cas de succès.
+
+**`GET /api/auth/me`** — Retourne l'utilisateur connecté ou 401.
+
+```json
+{
+  "id": "3e9346c8-...",
+  "username": "Saar45",
+  "avatarUrl": "https://avatars.githubusercontent.com/u/...",
+  "githubId": 81822359
+}
+```
+
+**`POST /api/auth/logout`** — Invalidation de session (géré par Symfony security).
+
+---
 
 ### `ProjectController` (`/api/projects`)
 
-| Route | Méthode | Description |
-|-------|---------|-------------|
-| `/api/projects` | GET | Liste tous les projets |
-| `/api/projects` | POST | Crée un projet (name + repositoryUrl) |
-| `/api/projects/{id}` | GET | Détail d'un projet avec ses scans |
+**`GET /api/projects`** — Liste tous les projets.
+
+```json
+[
+  {
+    "id": "56fed627-...",
+    "name": "NodeGoat",
+    "repositoryUrl": "https://github.com/OWASP/NodeGoat",
+    "mainBranch": "main",
+    "createdAt": "2026-03-03T20:50:24+00:00",
+    "scanCount": 3
+  }
+]
+```
+
+**`POST /api/projects`** — Crée un projet.
+
+Requête :
+```json
+{
+  "name": "Mon projet",
+  "repositoryUrl": "https://github.com/user/repo",
+  "mainBranch": "main"  // optionnel
+}
+```
+
+Réponse (201) :
+```json
+{
+  "id": "...",
+  "name": "Mon projet",
+  "repositoryUrl": "https://github.com/user/repo",
+  "mainBranch": "main",
+  "createdAt": "2026-03-03T21:00:00+00:00"
+}
+```
+
+**`GET /api/projects/{id}`** — Détail d'un projet avec ses scans.
+
+```json
+{
+  "id": "...",
+  "name": "NodeGoat",
+  "repositoryUrl": "https://github.com/OWASP/NodeGoat",
+  "mainBranch": "main",
+  "createdAt": "2026-03-03T20:50:24+00:00",
+  "scans": [
+    {
+      "id": "...",
+      "executedAt": "2026-03-03T21:28:01+00:00",
+      "globalScore": "95.00",
+      "status": "completed",
+      "findingsCount": 1
+    }
+  ]
+}
+```
+
+---
 
 ### `ScanController` (`/api/scans`)
 
-| Route | Méthode | Description |
-|-------|---------|-------------|
-| `/api/scans` | POST | Lance un scan (accepte `repositoryUrl` ou `projectId`) |
-| `/api/scans/recent` | GET | 10 derniers scans |
-| `/api/scans/{id}` | GET | Détail d'un scan avec findings et remediations |
-| `/api/scans/{id}/findings` | GET | Findings filtrable (severity, tool, owasp) |
-| `/api/scans/{id}/apply-fixes` | POST | Applique les fixes AI + push + PR avec le token OAuth |
-| `/api/scans/{id}/report` | GET | Télécharge le rapport PDF |
+**`POST /api/scans`** — Lance un scan. Accepte `repositoryUrl` (crée le projet automatiquement) ou `projectId`.
+
+Requête :
+```json
+{ "repositoryUrl": "https://github.com/OWASP/NodeGoat" }
+// ou
+{ "projectId": "56fed627-..." }
+```
+
+Réponse (201) :
+```json
+{
+  "id": "778005c1-...",
+  "projectId": "e7c80ad3-...",
+  "status": "completed",
+  "globalScore": "95.00",
+  "executedAt": "2026-03-03T21:28:01+00:00",
+  "findingsCount": 1
+}
+```
+
+**`GET /api/scans/recent`** — Les 10 derniers scans.
+
+```json
+[
+  {
+    "id": "...",
+    "project": {
+      "id": "...",
+      "name": "NodeGoat",
+      "repositoryUrl": "https://github.com/OWASP/NodeGoat"
+    },
+    "executedAt": "2026-03-03T21:28:01+00:00",
+    "globalScore": "95.00",
+    "status": "completed",
+    "findingsCount": 1
+  }
+]
+```
+
+**`GET /api/scans/{id}`** — Détail d'un scan avec tous les findings et remediations.
+
+```json
+{
+  "id": "...",
+  "project": {
+    "id": "...",
+    "name": "NodeGoat",
+    "repositoryUrl": "https://github.com/OWASP/NodeGoat"
+  },
+  "executedAt": "2026-03-03T21:28:01+00:00",
+  "globalScore": "95.00",
+  "status": "completed",
+  "findings": [
+    {
+      "id": "...",
+      "toolSource": "semgrep",
+      "severity": "MEDIUM",
+      "owaspCategory": "A03",
+      "filePath": "server.js",
+      "lineNumber": 42,
+      "description": "Detected user input flowing into eval...",
+      "rawCode": "eval(req.query.cmd)",
+      "remediation": {
+        "proposedFix": "Protégez-vous contre les injections...",
+        "status": "pending",
+        "gitBranchName": null,
+        "prUrl": null
+      }
+    }
+  ]
+}
+```
+
+**`GET /api/scans/{id}/findings`** — Findings avec filtres optionnels.
+
+Query params : `?severity=HIGH&tool=semgrep&owasp=A03` (tous optionnels).
+
+Réponse : même format que le tableau `findings` ci-dessus.
+
+**`POST /api/scans/{id}/apply-fixes`** — Applique les fixes AI, push et crée une PR.
+
+```json
+{
+  "branch": "fix/securescan-2026-03-03-778005c1",
+  "prUrl": "https://github.com/OWASP/NodeGoat/pull/123"
+}
+```
+
+**`GET /api/scans/{id}/report`** — Télécharge le rapport PDF (Content-Type: `application/pdf`).
 
 ---
 
