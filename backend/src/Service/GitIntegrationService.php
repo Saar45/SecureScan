@@ -5,26 +5,29 @@ namespace App\Service;
 use App\Entity\Scan;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Component\Process\Process;
+use Symfony\Contracts\HttpClient\HttpClientInterface;
 
 class GitIntegrationService
 {
     public function __construct(
         private readonly EntityManagerInterface $entityManager,
+        private readonly AiFixService $aiFixService,
+        private readonly HttpClientInterface $httpClient,
     ) {
     }
 
     /**
-     * Applique les remediations sous forme de fichiers Markdown dans une branche dédiée,
-     * puis pousse vers le dépôt distant si GIT_TOKEN est configuré.
+     * Applique les remediations (fixes AI + documentation) dans une branche dédiée,
+     * pousse vers le dépôt distant et ouvre une Pull Request si GIT_TOKEN est configuré.
      *
-     * @return string|null Le nom de la branche créée, ou null si rien à appliquer
+     * @return array{branch: ?string, prUrl: ?string}
      */
-    public function applyAndPush(Scan $scan, string $workdir): ?string
+    public function applyAndPush(Scan $scan, string $workdir): array
     {
         $remediations = $this->collectPendingRemediations($scan);
 
         if (\count($remediations) === 0) {
-            return null;
+            return ['branch' => null, 'prUrl' => null];
         }
 
         $shortUuid = substr($scan->getId(), 0, 8);
@@ -34,19 +37,184 @@ class GitIntegrationService
         $this->configureGitIdentity($workdir);
         $this->unshallowIfNeeded($workdir);
         $this->createBranch($workdir, $branchName);
+
+        $this->applyAiFixes($workdir, $remediations);
         $this->writeRemediationFiles($workdir, $remediations);
+
         $this->commitChanges($workdir, $scan);
         $this->pushBranch($workdir, $branchName);
+
+        $repoUrl = $scan->getProject()->getRepositoryUrl();
+        $prUrl = $this->createPullRequest($repoUrl, $branchName, $scan);
 
         foreach ($remediations as $remediation) {
             $remediation->setStatus('applied');
             $remediation->setGitBranchName($branchName);
+            if ($prUrl !== null) {
+                $remediation->setPrUrl($prUrl);
+            }
             $remediation->setUpdatedAt(new \DateTime());
         }
 
         $this->entityManager->flush();
 
-        return $branchName;
+        return ['branch' => $branchName, 'prUrl' => $prUrl];
+    }
+
+    private const MAX_AI_FIXES = 10;
+
+    private const SEVERITY_PRIORITY = [
+        'CRITICAL' => 0,
+        'HIGH' => 1,
+        'MEDIUM' => 2,
+        'LOW' => 3,
+        'INFO' => 4,
+    ];
+
+    /**
+     * Applies AI-generated fixes directly to source files in the workdir.
+     *
+     * Limited to MAX_AI_FIXES calls to avoid API rate limits and keep PRs reviewable.
+     * Findings are prioritized by severity (CRITICAL first).
+     */
+    private function applyAiFixes(string $workdir, array $remediations): void
+    {
+        // Sort by severity so the most critical findings get AI fixes first
+        $candidates = $remediations;
+        usort($candidates, function ($a, $b) {
+            $sevA = self::SEVERITY_PRIORITY[strtoupper($a->getFinding()->getSeverity())] ?? 5;
+            $sevB = self::SEVERITY_PRIORITY[strtoupper($b->getFinding()->getSeverity())] ?? 5;
+            return $sevA <=> $sevB;
+        });
+
+        $applied = 0;
+
+        foreach ($candidates as $remediation) {
+            if ($applied >= self::MAX_AI_FIXES) {
+                break;
+            }
+
+            $finding = $remediation->getFinding();
+            $filePath = $finding->getFilePath();
+            $rawCode = $finding->getRawCode();
+
+            if ($filePath === '' || $rawCode === null || trim($rawCode) === '') {
+                continue;
+            }
+
+            $fullPath = $workdir . '/' . $filePath;
+            if (!file_exists($fullPath)) {
+                continue;
+            }
+
+            $fixedCode = $this->aiFixService->generateFix($finding);
+            if ($fixedCode === null || trim($fixedCode) === '') {
+                continue;
+            }
+
+            $fileContent = file_get_contents($fullPath);
+            if ($fileContent === false) {
+                continue;
+            }
+
+            // Replace the vulnerable code snippet with the AI-generated fix
+            $newContent = str_replace(trim($rawCode), $fixedCode, $fileContent);
+            if ($newContent !== $fileContent) {
+                file_put_contents($fullPath, $newContent);
+                $applied++;
+            }
+        }
+    }
+
+    /**
+     * Creates a Pull Request on GitHub via the API.
+     *
+     * Returns the PR URL on success, or null if the token is missing or the call fails.
+     */
+    private function createPullRequest(string $repoUrl, string $branchName, Scan $scan): ?string
+    {
+        $token = $_ENV['GIT_TOKEN'] ?? $_SERVER['GIT_TOKEN'] ?? '';
+        if ($token === '') {
+            return null;
+        }
+
+        $ownerRepo = $this->parseOwnerRepo($repoUrl);
+        if ($ownerRepo === null) {
+            return null;
+        }
+
+        [$owner, $repo] = $ownerRepo;
+
+        $title = sprintf('[SecureScan] Security fixes for scan %s', substr($scan->getId(), 0, 8));
+        $body = sprintf(
+            "Automated security remediations generated by SecureScan.\n\n"
+            . "**Scan score:** %s/100\n"
+            . "**Findings:** %d\n\n"
+            . "This PR contains AI-generated code fixes and remediation documentation.",
+            $scan->getGlobalScore() ?? 'N/A',
+            $scan->getFindings()->count()
+        );
+
+        // Detect the default branch to use as base
+        $baseBranch = $this->detectDefaultBranch($owner, $repo, $token);
+
+        try {
+            $response = $this->httpClient->request('POST', sprintf('https://api.github.com/repos/%s/%s/pulls', $owner, $repo), [
+                'headers' => [
+                    'Authorization' => sprintf('Bearer %s', $token),
+                    'Accept' => 'application/vnd.github+json',
+                ],
+                'json' => [
+                    'title' => $title,
+                    'body' => $body,
+                    'head' => $branchName,
+                    'base' => $baseBranch,
+                ],
+            ]);
+
+            $data = $response->toArray();
+
+            return $data['html_url'] ?? null;
+        } catch (\Throwable) {
+            return null;
+        }
+    }
+
+    /**
+     * Detects the default branch of a GitHub repository.
+     */
+    private function detectDefaultBranch(string $owner, string $repo, string $token): string
+    {
+        try {
+            $response = $this->httpClient->request('GET', sprintf('https://api.github.com/repos/%s/%s', $owner, $repo), [
+                'headers' => [
+                    'Authorization' => sprintf('Bearer %s', $token),
+                    'Accept' => 'application/vnd.github+json',
+                ],
+            ]);
+
+            $data = $response->toArray();
+
+            return $data['default_branch'] ?? 'main';
+        } catch (\Throwable) {
+            return 'main';
+        }
+    }
+
+    /**
+     * Extracts owner and repo name from a GitHub URL.
+     *
+     * Supports: https://github.com/owner/repo, https://github.com/owner/repo.git
+     *
+     * @return array{0: string, 1: string}|null
+     */
+    private function parseOwnerRepo(string $repoUrl): ?array
+    {
+        if (preg_match('#github\.com[/:]([^/]+)/([^/.]+?)(?:\.git)?$#', $repoUrl, $matches)) {
+            return [$matches[1], $matches[2]];
+        }
+
+        return null;
     }
 
     private function collectPendingRemediations(Scan $scan): array
