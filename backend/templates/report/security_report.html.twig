@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>SecureScan Report - {{ project.name }}</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: Helvetica, Arial, sans-serif; color: #1a1a2e; font-size: 11px; line-height: 1.5; }
+
+        .header { background: #1a1a2e; color: #fff; padding: 30px; text-align: center; }
+        .header h1 { font-size: 24px; margin-bottom: 5px; }
+        .header .subtitle { font-size: 13px; color: #a0a0c0; }
+
+        .meta { padding: 20px 30px; background: #f4f4f8; border-bottom: 2px solid #e0e0e8; }
+        .meta table { width: 100%; }
+        .meta td { padding: 4px 10px; }
+        .meta .label { font-weight: bold; color: #555; width: 140px; }
+
+        .score-section { text-align: center; padding: 25px; }
+        .score-badge {
+            display: inline-block; width: 100px; height: 100px; border-radius: 50%;
+            line-height: 100px; font-size: 28px; font-weight: bold; color: #fff;
+        }
+        .score-critical { background: #dc2626; }
+        .score-warning { background: #f59e0b; }
+        .score-good { background: #16a34a; }
+        .score-label { margin-top: 8px; font-size: 13px; color: #666; }
+
+        .severity-cards { display: table; width: 100%; padding: 0 30px 20px; }
+        .severity-card {
+            display: table-cell; text-align: center; padding: 12px 8px;
+            border: 1px solid #e0e0e8; width: 20%;
+        }
+        .severity-card .count { font-size: 22px; font-weight: bold; }
+        .severity-card .sev-label { font-size: 10px; text-transform: uppercase; color: #666; }
+        .sev-critical .count { color: #dc2626; }
+        .sev-high .count { color: #ea580c; }
+        .sev-medium .count { color: #f59e0b; }
+        .sev-low .count { color: #2563eb; }
+        .sev-info .count { color: #6b7280; }
+
+        .section-title {
+            background: #1a1a2e; color: #fff; padding: 10px 30px;
+            font-size: 14px; margin-top: 15px;
+        }
+
+        .owasp-group { padding: 15px 30px; }
+        .owasp-group h3 { font-size: 13px; color: #1a1a2e; border-bottom: 1px solid #ddd; padding-bottom: 5px; margin-bottom: 10px; }
+
+        .finding-row { margin-bottom: 12px; padding: 10px; background: #fafafa; border-left: 4px solid #ccc; page-break-inside: avoid; }
+        .finding-row.sev-CRITICAL { border-left-color: #dc2626; }
+        .finding-row.sev-HIGH { border-left-color: #ea580c; }
+        .finding-row.sev-MEDIUM { border-left-color: #f59e0b; }
+        .finding-row.sev-LOW { border-left-color: #2563eb; }
+        .finding-row.sev-INFO { border-left-color: #6b7280; }
+
+        .finding-header { font-weight: bold; margin-bottom: 4px; }
+        .finding-meta { font-size: 10px; color: #666; margin-bottom: 6px; }
+        .finding-desc { margin-bottom: 6px; }
+
+        .remediation-box {
+            background: #ecfdf5; border: 1px solid #a7f3d0; padding: 8px 10px;
+            border-radius: 4px; margin-top: 6px;
+        }
+        .remediation-box .rem-title { font-weight: bold; color: #065f46; font-size: 10px; margin-bottom: 4px; }
+
+        .code-block {
+            background: #1e1e2e; color: #cdd6f4; padding: 8px 10px;
+            font-family: monospace; font-size: 9px; border-radius: 4px;
+            margin-top: 6px; white-space: pre-wrap; word-break: break-all;
+        }
+
+        .footer {
+            margin-top: 30px; padding: 15px 30px; background: #f4f4f8;
+            border-top: 2px solid #e0e0e8; text-align: center;
+            font-size: 10px; color: #888;
+        }
+    </style>
+</head>
+<body>
+
+<div class="header">
+    <h1>SecureScan Security Report</h1>
+    <div class="subtitle">Automated Vulnerability Assessment</div>
+</div>
+
+<div class="meta">
+    <table>
+        <tr>
+            <td class="label">Project</td>
+            <td>{{ project.name }}</td>
+            <td class="label">Repository</td>
+            <td>{{ project.repositoryUrl }}</td>
+        </tr>
+        <tr>
+            <td class="label">Scan ID</td>
+            <td>{{ scan.id }}</td>
+            <td class="label">Scan Date</td>
+            <td>{{ scan.executedAt|date('Y-m-d H:i:s') }}</td>
+        </tr>
+        <tr>
+            <td class="label">Status</td>
+            <td>{{ scan.status }}</td>
+            <td class="label">Total Findings</td>
+            <td>{{ totalFindings }}</td>
+        </tr>
+    </table>
+</div>
+
+<div class="score-section">
+    {% set score = scan.globalScore|default(0)|number_format(0) %}
+    {% if score|number_format(0) < 40 %}
+        <div class="score-badge score-critical">{{ score }}</div>
+    {% elseif score|number_format(0) < 70 %}
+        <div class="score-badge score-warning">{{ score }}</div>
+    {% else %}
+        <div class="score-badge score-good">{{ score }}</div>
+    {% endif %}
+    <div class="score-label">Global Security Score (0-100)</div>
+</div>
+
+<div class="severity-cards">
+    <div class="severity-card sev-critical">
+        <div class="count">{{ severityCounts.CRITICAL }}</div>
+        <div class="sev-label">Critical</div>
+    </div>
+    <div class="severity-card sev-high">
+        <div class="count">{{ severityCounts.HIGH }}</div>
+        <div class="sev-label">High</div>
+    </div>
+    <div class="severity-card sev-medium">
+        <div class="count">{{ severityCounts.MEDIUM }}</div>
+        <div class="sev-label">Medium</div>
+    </div>
+    <div class="severity-card sev-low">
+        <div class="count">{{ severityCounts.LOW }}</div>
+        <div class="sev-label">Low</div>
+    </div>
+    <div class="severity-card sev-info">
+        <div class="count">{{ severityCounts.INFO }}</div>
+        <div class="sev-label">Info</div>
+    </div>
+</div>
+
+<div class="section-title">Findings by OWASP Category</div>
+
+{% for owaspCode, owaspFindings in byOwasp %}
+<div class="owasp-group">
+    <h3>{{ owaspCode }}{% if owaspCode != 'Uncategorized' %} (OWASP Top 10){% endif %} &mdash; {{ owaspFindings|length }} finding{{ owaspFindings|length > 1 ? 's' : '' }}</h3>
+
+    {% for finding in owaspFindings %}
+    <div class="finding-row sev-{{ finding.severity }}">
+        <div class="finding-header">
+            [{{ finding.severity }}] {{ finding.toolSource }}
+        </div>
+        <div class="finding-meta">
+            {{ finding.filePath }}{% if finding.lineNumber %} : line {{ finding.lineNumber }}{% endif %}
+        </div>
+        <div class="finding-desc">{{ finding.description }}</div>
+
+        {% if finding.rawCode %}
+        <div class="code-block">{{ finding.rawCode }}</div>
+        {% endif %}
+
+        {% if finding.remediation and finding.remediation.proposedFix %}
+        <div class="remediation-box">
+            <div class="rem-title">Proposed Remediation
+                {% if finding.remediation.status != 'pending' %}
+                    ({{ finding.remediation.status }})
+                {% endif %}
+            </div>
+            {{ finding.remediation.proposedFix }}
+        </div>
+        {% endif %}
+    </div>
+    {% endfor %}
+</div>
+{% endfor %}
+
+{% if totalFindings == 0 %}
+<div class="owasp-group">
+    <p style="text-align: center; padding: 30px; color: #16a34a; font-size: 14px;">
+        No vulnerabilities found. The codebase looks clean.
+    </p>
+</div>
+{% endif %}
+
+<div class="footer">
+    Generated by SecureScan on {{ generatedAt|date('Y-m-d H:i:s') }} &bull; Automated Security Assessment Platform
+</div>
+
+</body>
+</html>
