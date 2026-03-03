@@ -145,4 +145,10 @@ class Finding
     {
         return $this->remediation;
     }
+
+    public function setRemediation(?Remediation $remediation): static
+    {
+        $this->remediation = $remediation;
+        return $this;
+    }
 }

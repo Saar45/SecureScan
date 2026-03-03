@@ -59,7 +59,9 @@ class GitIntegrationCommand extends Command
         // Git integration
         $output->writeln('<info>Application des remediations Git...</info>');
         try {
-            $branch = $this->gitIntegration->applyAndPush($scan, $workdir);
+            $result = $this->gitIntegration->applyAndPush($scan, $workdir);
+            $branch = $result['branch'];
+            $prUrl = $result['prUrl'];
 
             if ($branch !== null) {
                 $output->writeln(sprintf('<comment>Branche creee : %s</comment>', $branch));
@@ -69,6 +71,10 @@ class GitIntegrationCommand extends Command
                     $output->writeln('<comment>Push effectue vers le depot distant.</comment>');
                 } else {
                     $output->writeln('<comment>GIT_TOKEN non configure : commit local uniquement (pas de push).</comment>');
+                }
+
+                if ($prUrl !== null) {
+                    $output->writeln(sprintf('<comment>Pull Request creee : %s</comment>', $prUrl));
                 }
             } else {
                 $output->writeln('<comment>Aucune remediation pending a appliquer.</comment>');

@@ -501,32 +501,46 @@ class ScanManager
     }
 
     /**
-     * Crée automatiquement une entité `Remediation` pour certains types de findings.
+     * Crée automatiquement une entité `Remediation` pour chaque finding.
      *
-     * L'objectif est de fournir immédiatement une piste de correction pour l'utilisateur,
-     * sans nécessiter un moteur de recommandations complexe.
+     * Un texte de remédiation est généré selon la catégorie OWASP du finding.
+     * Les corrections de code effectives sont déléguées à AiFixService lors de l'intégration Git.
      */
     private function maybeCreateRemediation(Finding $finding): void
     {
-        $owasp = $finding->getOwaspCategory();
-        if ($owasp === null) {
-            return;
-        }
-
-        if ($owasp === 'A05') {
-            $remediationText = 'Protégez-vous contre les injections (par ex. SQL) en utilisant des requêtes paramétrées, une validation stricte des entrées et en évitant la concaténation de chaînes dans les requêtes.';
-        } elseif ($owasp === 'A04') {
-            $remediationText = 'Ne stockez jamais de secrets dans le code ou le dépôt. Utilisez des variables d\'environnement, un gestionnaire de secrets (Vault, AWS Secrets Manager, etc.) et limitez la portée des clés.';
-        } else {
-            return;
-        }
+        $remediationText = $this->getRemediationTextForFinding($finding);
 
         $remediation = new Remediation();
         $remediation
             ->setFinding($finding)
             ->setProposedFix($remediationText);
 
+        $finding->setRemediation($remediation);
         $this->entityManager->persist($remediation);
+    }
+
+    private function getRemediationTextForFinding(Finding $finding): string
+    {
+        $owasp = $finding->getOwaspCategory();
+
+        return match ($owasp) {
+            'A01' => 'Renforcez les contrôles d\'accès : vérifiez l\'authentification et l\'autorisation côté serveur pour chaque requête. Appliquez le principe du moindre privilège.',
+            'A02' => 'Corrigez les failles cryptographiques : utilisez des algorithmes modernes (bcrypt, Argon2 pour les mots de passe), activez TLS partout et ne stockez pas de données sensibles inutilement.',
+            'A03' => 'Protégez-vous contre les injections (XSS, SQL, etc.) : échappez systématiquement les sorties, utilisez des requêtes paramétrées et validez toutes les entrées côté serveur.',
+            'A04' => 'Ne stockez jamais de secrets dans le code ou le dépôt. Utilisez des variables d\'environnement, un gestionnaire de secrets (Vault, AWS Secrets Manager, etc.) et limitez la portée des clés.',
+            'A05' => 'Protégez-vous contre les injections en utilisant des requêtes paramétrées, une validation stricte des entrées et en évitant la concaténation de chaînes dans les requêtes.',
+            'A06' => 'Mettez à jour les composants vulnérables et obsolètes. Automatisez la veille des dépendances (Dependabot, Renovate) et supprimez les bibliothèques inutilisées.',
+            'A07' => 'Corrigez les failles d\'authentification : implémentez la limitation de tentatives, utilisez l\'authentification multi-facteurs et ne divulguez pas d\'informations sur les comptes existants.',
+            'A08' => 'Vérifiez l\'intégrité des logiciels et des données : signez les artefacts, validez les mises à jour et sécurisez les pipelines CI/CD.',
+            'A09' => 'Améliorez la journalisation et la surveillance : enregistrez les événements de sécurité, centralisez les logs et mettez en place des alertes en temps réel.',
+            'A10' => 'Protégez-vous contre les falsifications de requêtes côté serveur (SSRF) : validez et filtrez les URL, bloquez les plages d\'adresses internes et utilisez des listes d\'autorisation.',
+            default => sprintf(
+                'Vulnérabilité détectée (%s, sévérité %s). Examinez le code concerné dans %s et appliquez les bonnes pratiques de sécurité OWASP.',
+                $finding->getToolSource(),
+                $finding->getSeverity(),
+                $finding->getFilePath()
+            ),
+        };
     }
 
     /**
