@@ -59,7 +59,8 @@ RUN chmod +x /usr/local/bin/entrypoint.sh
 WORKDIR /var/www/html
 
 # Set proper permissions and create runtime directories
-RUN chown -R www-data:www-data /var/www/html && \
+# Give www-data full ownership of its home dir so tools (semgrep, npm, composer, trufflehog) can write configs/caches
+RUN chown -R www-data:www-data /var/www && \
     mkdir -p /tmp/scans && chmod 777 /tmp/scans && \
     mkdir -p /tmp/reports && chmod 777 /tmp/reports
 
