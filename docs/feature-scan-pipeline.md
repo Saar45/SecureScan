@@ -175,7 +175,7 @@ Fichier: `backend/src/Service/ScanManager.php`
    - `processTrufflehogResults()`:
      - crée un `Finding` par secret potentiel,
      - sévérité forcée à `HIGH`,
-     - catégorie OWASP fixée à `A04` (Insecure Design / secrets exposés).
+     - catégorie OWASP fixée à `A04` (Cryptographic Failures / secrets exposés).
    - `processDependencyResults()`:
      - supporte:
        - le **nouveau format** `npm audit` (`vulnerabilities`),
@@ -185,8 +185,8 @@ Fichier: `backend/src/Service/ScanManager.php`
      - mappe chaque advisory vers une catégorie OWASP via `mapToOwaspCategoryFromDependency()`.
 7. **Génère des recommandations automatiques**:
    - `maybeCreateRemediation()`:
-     - pour certains OWASP (`A05`, `A04`), crée une entité `Remediation`,
-     - associe un texte de correction générique mais actionnable (ex: utiliser des requêtes préparées, ne pas stocker de secrets en dur).
+     - crée une entité `Remediation` pour chaque finding, avec un texte adapté à sa catégorie OWASP 2025,
+     - associe un texte de correction générique mais actionnable (ex: requêtes paramétrées pour A05, gestion des secrets pour A04, mise à jour des dépendances pour A03).
 8. **Calcule le score global**:
    - `computeScore()`:
      - part d'un score de base `100`,

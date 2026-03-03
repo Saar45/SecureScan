@@ -355,8 +355,8 @@ class ScanManager
     /**
      * Transforme les résultats TruffleHog (détection de secrets) en `Finding`.
      *
-     * Tous ces findings sont considérés comme haute sévérité et mappés sur OWASP A04,
-     * ce qui permet de générer des recommandations ciblées.
+     * Tous ces findings sont considérés comme haute sévérité et mappés sur OWASP A04
+     * (Cryptographic Failures — secrets exposés), ce qui permet de générer des recommandations ciblées.
      */
     private function processTrufflehogResults(?array $results, Scan $scan): void
     {
@@ -546,24 +546,61 @@ class ScanManager
         $message = strtolower((string) ($result['extra']['message'] ?? ''));
         $ruleId = strtolower((string) ($result['check_id'] ?? ''));
 
-        if (str_contains($message, 'sql injection') || str_contains($ruleId, 'sql_injection')) {
+        // A05 — Injection (SQL, XSS, command injection, path traversal, eval, LDAP, etc.)
+        if (str_contains($message, 'sql injection') || str_contains($ruleId, 'sql_injection')
+            || str_contains($message, 'xss') || str_contains($ruleId, 'xss')
+            || str_contains($message, 'cross-site scripting')
+            || str_contains($message, 'command injection') || str_contains($ruleId, 'command_injection')
+            || str_contains($message, 'path traversal') || str_contains($ruleId, 'path_traversal')
+            || str_contains($message, 'eval(') || str_contains($ruleId, 'eval')
+            || str_contains($message, 'ldap injection') || str_contains($ruleId, 'ldap')) {
             return 'A05';
         }
 
-        if (str_contains($message, 'xss') || str_contains($ruleId, 'xss')) {
-            return 'A03';
-        }
-
-        if (str_contains($message, 'path traversal') || str_contains($ruleId, 'path_traversal')) {
-            return 'A05';
-        }
-
-        if (str_contains($message, 'authentication') || str_contains($ruleId, 'auth')) {
+        // A01 — Broken Access Control
+        if (str_contains($message, 'authorization') || str_contains($ruleId, 'access_control')
+            || str_contains($message, 'access control') || str_contains($ruleId, 'idor')
+            || str_contains($message, 'privilege') || str_contains($ruleId, 'privilege')) {
             return 'A01';
         }
 
-        if (str_contains($message, 'authorization') || str_contains($ruleId, 'access_control')) {
+        // A02 — Security Misconfiguration
+        if (str_contains($message, 'misconfiguration') || str_contains($ruleId, 'misconfig')
+            || str_contains($message, 'cors') || str_contains($ruleId, 'cors')
+            || str_contains($message, 'debug') || str_contains($ruleId, 'debug')
+            || str_contains($message, 'default password') || str_contains($ruleId, 'default_password')
+            || str_contains($message, 'hardcoded') || str_contains($ruleId, 'hardcoded')) {
             return 'A02';
+        }
+
+        // A04 — Cryptographic Failures
+        if (str_contains($message, 'crypto') || str_contains($ruleId, 'crypto')
+            || str_contains($message, 'weak hash') || str_contains($ruleId, 'weak_hash')
+            || str_contains($message, 'md5') || str_contains($message, 'sha1')
+            || str_contains($message, 'insecure random') || str_contains($ruleId, 'random')
+            || str_contains($message, 'tls') || str_contains($message, 'ssl')
+            || str_contains($message, 'cleartext') || str_contains($ruleId, 'cleartext')) {
+            return 'A04';
+        }
+
+        // A07 — Authentication Failures
+        if (str_contains($message, 'authentication') || str_contains($ruleId, 'auth')
+            || str_contains($message, 'session') || str_contains($ruleId, 'session')
+            || str_contains($message, 'password') || str_contains($ruleId, 'password')
+            || str_contains($message, 'brute force') || str_contains($ruleId, 'brute_force')) {
+            return 'A07';
+        }
+
+        // A06 — Insecure Design
+        if (str_contains($message, 'insecure design') || str_contains($ruleId, 'insecure_design')
+            || str_contains($message, 'race condition') || str_contains($ruleId, 'race_condition')) {
+            return 'A06';
+        }
+
+        // A08 — Software and Data Integrity Failures
+        if (str_contains($message, 'deserialization') || str_contains($ruleId, 'deserialization')
+            || str_contains($message, 'integrity') || str_contains($ruleId, 'integrity')) {
+            return 'A08';
         }
 
         return null;
@@ -580,23 +617,31 @@ class ScanManager
         $title = strtolower((string) ($advisory['title'] ?? ''));
         $description = strtolower((string) ($advisory['description'] ?? ''));
 
-        if (str_contains($title, 'injection') || str_contains($description, 'injection')) {
+        // A05 — Injection (SQL, XSS, command injection in dependencies)
+        if (str_contains($title, 'injection') || str_contains($description, 'injection')
+            || str_contains($title, 'xss') || str_contains($description, 'cross-site scripting')) {
             return 'A05';
         }
 
-        if (str_contains($title, 'xss') || str_contains($description, 'cross-site scripting')) {
-            return 'A03';
+        // A07 — Authentication Failures
+        if (str_contains($title, 'authentication') || str_contains($description, 'authentication')) {
+            return 'A07';
         }
 
-        if (str_contains($title, 'authentication') || str_contains($description, 'authentication')) {
+        // A01 — Broken Access Control
+        if (str_contains($title, 'authorization') || str_contains($description, 'authorization')
+            || str_contains($title, 'access control') || str_contains($description, 'access control')) {
             return 'A01';
         }
 
-        if (str_contains($title, 'authorization') || str_contains($description, 'authorization')) {
-            return 'A02';
+        // A04 — Cryptographic Failures
+        if (str_contains($title, 'crypto') || str_contains($description, 'crypto')
+            || str_contains($title, 'ssl') || str_contains($description, 'tls')) {
+            return 'A04';
         }
 
-        return null;
+        // Default for dependency vulnerabilities → A03 (Software Supply Chain Failures)
+        return 'A03';
     }
 
     /**
@@ -623,16 +668,16 @@ class ScanManager
         $owasp = $finding->getOwaspCategory();
 
         return match ($owasp) {
-            'A01' => 'Renforcez les contrôles d\'accès : vérifiez l\'authentification et l\'autorisation côté serveur pour chaque requête. Appliquez le principe du moindre privilège.',
-            'A02' => 'Corrigez les failles cryptographiques : utilisez des algorithmes modernes (bcrypt, Argon2 pour les mots de passe), activez TLS partout et ne stockez pas de données sensibles inutilement.',
-            'A03' => 'Protégez-vous contre les injections (XSS, SQL, etc.) : échappez systématiquement les sorties, utilisez des requêtes paramétrées et validez toutes les entrées côté serveur.',
-            'A04' => 'Ne stockez jamais de secrets dans le code ou le dépôt. Utilisez des variables d\'environnement, un gestionnaire de secrets (Vault, AWS Secrets Manager, etc.) et limitez la portée des clés.',
-            'A05' => 'Protégez-vous contre les injections en utilisant des requêtes paramétrées, une validation stricte des entrées et en évitant la concaténation de chaînes dans les requêtes.',
-            'A06' => 'Mettez à jour les composants vulnérables et obsolètes. Automatisez la veille des dépendances (Dependabot, Renovate) et supprimez les bibliothèques inutilisées.',
-            'A07' => 'Corrigez les failles d\'authentification : implémentez la limitation de tentatives, utilisez l\'authentification multi-facteurs et ne divulguez pas d\'informations sur les comptes existants.',
-            'A08' => 'Vérifiez l\'intégrité des logiciels et des données : signez les artefacts, validez les mises à jour et sécurisez les pipelines CI/CD.',
-            'A09' => 'Améliorez la journalisation et la surveillance : enregistrez les événements de sécurité, centralisez les logs et mettez en place des alertes en temps réel.',
-            'A10' => 'Protégez-vous contre les falsifications de requêtes côté serveur (SSRF) : validez et filtrez les URL, bloquez les plages d\'adresses internes et utilisez des listes d\'autorisation.',
+            'A01' => 'Renforcez les contrôles d\'accès : vérifiez l\'autorisation côté serveur pour chaque requête. Appliquez le principe du moindre privilège et refusez par défaut.',
+            'A02' => 'Corrigez les erreurs de configuration : désactivez les fonctionnalités inutiles, changez les mots de passe par défaut, restreignez les en-têtes CORS et appliquez un durcissement systématique.',
+            'A03' => 'Sécurisez la chaîne d\'approvisionnement logicielle : mettez à jour les dépendances vulnérables, automatisez la veille (Dependabot, Renovate), vérifiez l\'intégrité des paquets et supprimez les bibliothèques inutilisées.',
+            'A04' => 'Corrigez les failles cryptographiques : utilisez des algorithmes modernes (bcrypt, Argon2), activez TLS partout, ne stockez jamais de secrets dans le code et utilisez un gestionnaire de secrets (Vault, AWS Secrets Manager).',
+            'A05' => 'Protégez-vous contre les injections (SQL, XSS, commandes OS, etc.) : utilisez des requêtes paramétrées, échappez systématiquement les sorties, validez toutes les entrées côté serveur et évitez eval().',
+            'A06' => 'Améliorez la conception sécurisée : modélisez les menaces dès la conception, appliquez les design patterns sécurisés et séparez les couches métier des couches de présentation.',
+            'A07' => 'Corrigez les failles d\'authentification : implémentez la limitation de tentatives, utilisez l\'authentification multi-facteurs, sécurisez les sessions et ne divulguez pas d\'informations sur les comptes existants.',
+            'A08' => 'Vérifiez l\'intégrité des logiciels et des données : signez les artefacts, validez les mises à jour, sécurisez les pipelines CI/CD et protégez-vous contre la désérialisation non sécurisée.',
+            'A09' => 'Améliorez la journalisation et les alertes : enregistrez les événements de sécurité, centralisez les logs, mettez en place des alertes en temps réel et testez régulièrement votre capacité de détection.',
+            'A10' => 'Gérez correctement les conditions exceptionnelles : ne divulguez jamais de stack traces en production, validez toutes les entrées aux limites, gérez explicitement les erreurs et testez les cas limites.',
             default => sprintf(
                 'Vulnérabilité détectée (%s, sévérité %s). Examinez le code concerné dans %s et appliquez les bonnes pratiques de sécurité OWASP.',
                 $finding->getToolSource(),
