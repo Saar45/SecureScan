@@ -89,4 +89,13 @@ class Scan
     {
         return $this->findings;
     }
+
+    public function addFinding(Finding $finding): static
+    {
+        if (!$this->findings->contains($finding)) {
+            $this->findings->add($finding);
+        }
+
+        return $this;
+    }
 }

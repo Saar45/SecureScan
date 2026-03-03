@@ -33,8 +33,13 @@ RUN docker-php-ext-configure gd --with-freetype --with-jpeg \
 # Install Composer
 COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
 
-# Install security tools
-RUN pipx install semgrep && pipx ensurepath
+# 1. Installation de semgrep (il se mettra tout seul dans /usr/local/bin)
+RUN pip3 install semgrep --break-system-packages
+
+# 2. On s'assure simplement que le fichier est exécutable par tous
+RUN chmod +x /usr/local/bin/semgrep
+
+# 3. Installation de TruffleHog au même endroit
 RUN curl -sSfL https://raw.githubusercontent.com/trufflesecurity/trufflehog/main/scripts/install.sh | sh -s -- -b /usr/local/bin
 
 # Enable Apache modules
@@ -50,6 +55,7 @@ COPY docker/php/php.ini /usr/local/etc/php/conf.d/custom.ini
 WORKDIR /var/www/html
 
 # Set proper permissions
-RUN chown -R www-data:www-data /var/www/html
+RUN chown -R www-data:www-data /var/www/html && \
+    mkdir -p /tmp/scans && chmod 777 /tmp/scans
 
 EXPOSE 80
