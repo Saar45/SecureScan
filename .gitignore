@@ -18,6 +18,8 @@ backend/.env.local
 backend/.env.local.php
 backend/.env.*.local
 backend/.php-cs-fixer.cache
+backend/docker/
+backend/Dockerfile
 
 # Frontend (React/Vite)
 frontend/node_modules/

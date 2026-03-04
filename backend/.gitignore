@@ -8,4 +8,6 @@
 /public/reports/
 /var/
 /vendor/
+Dockerfile
 ###< symfony/framework-bundle ###
+docker/

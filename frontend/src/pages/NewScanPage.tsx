@@ -47,22 +47,30 @@ export default function NewScanPage() {
   return (
     <div className="max-w-2xl mx-auto space-y-8">
       <div>
-        <h1 className="text-3xl font-bold text-white">New Scan</h1>
-        <p className="text-gray-400 mt-1">Scan a Git repository by URL or upload a ZIP archive of your code</p>
+        <h1 className="text-3xl font-bold text-[#eaeff3]">New Scan</h1>
+        <p className="text-[color:var(--ss-text-muted)] mt-1">Scan a Git repository by URL or upload a ZIP archive of your code</p>
       </div>
 
-      <div className="flex rounded-lg bg-gray-900 border border-gray-800 p-1">
+      <div className="flex rounded-lg bg-[#0b1a1f]/80 border border-[#1b2836] p-1">
         <button
           type="button"
           onClick={() => { setMode('url'); setError(null); setZipFile(null); }}
-          className={`flex-1 py-2 px-4 rounded-md text-sm font-medium transition-colors ${mode === 'url' ? 'bg-indigo-600 text-white' : 'text-gray-400 hover:text-white'}`}
+          className={`flex-1 py-2 px-4 rounded-md text-sm font-medium transition-colors ${
+            mode === 'url'
+              ? 'bg-[#03e376] text-[#0a0f18] shadow-[0_0_20px_rgba(3,227,118,0.35)]'
+              : 'text-[color:var(--ss-text-muted)] hover:text-[color:var(--ss-text-main)]'
+          }`}
         >
           Repository URL
         </button>
         <button
           type="button"
           onClick={() => { setMode('zip'); setError(null); setRepoUrl(''); }}
-          className={`flex-1 py-2 px-4 rounded-md text-sm font-medium transition-colors ${mode === 'zip' ? 'bg-indigo-600 text-white' : 'text-gray-400 hover:text-white'}`}
+          className={`flex-1 py-2 px-4 rounded-md text-sm font-medium transition-colors ${
+            mode === 'zip'
+              ? 'bg-[#03e376] text-[#0a0f18] shadow-[0_0_20px_rgba(3,227,118,0.35)]'
+              : 'text-[color:var(--ss-text-muted)] hover:text-[color:var(--ss-text-main)]'
+          }`}
         >
           Upload ZIP
         </button>
@@ -70,16 +78,16 @@ export default function NewScanPage() {
 
       {mode === 'url' ? (
         <form onSubmit={handleSubmitUrl} className="space-y-6">
-          <div className="bg-gray-900 border border-gray-800 rounded-xl p-6 space-y-4">
+          <div className="bg-[#0b1a1f]/80 border border-[#1b2836] rounded-xl p-6 space-y-4">
             <label className="block">
-              <span className="text-sm font-medium text-gray-300">Repository URL</span>
+              <span className="text-sm font-medium text-[#eaeff3]">Repository URL</span>
               <input
                 type="url"
                 value={repoUrl}
                 onChange={(e) => setRepoUrl(e.target.value)}
                 placeholder="https://github.com/owner/repo"
                 disabled={scanning}
-                className="mt-2 w-full px-4 py-3 bg-gray-800 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent disabled:opacity-50"
+                className="mt-2 w-full px-4 py-3 bg-black/20 border border-[#1b2836] rounded-lg text-[#eaeff3] placeholder-[color:var(--ss-text-muted)] focus:outline-none focus:ring-2 focus:ring-[#03e376] focus:border-transparent disabled:opacity-50"
                 required
               />
             </label>
@@ -94,7 +102,7 @@ export default function NewScanPage() {
           <button
             type="submit"
             disabled={scanning || !repoUrl.trim()}
-            className="w-full flex items-center justify-center gap-3 px-6 py-3.5 bg-indigo-600 text-white font-semibold rounded-lg hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            className="w-full flex items-center justify-center gap-3 px-6 py-3.5 bg-[#03e376] text-[#0a0f18] font-semibold rounded-lg hover:bg-[#47e297] disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-[0_0_25px_rgba(3,227,118,0.25)]"
           >
             {scanning ? (
               <>
@@ -113,19 +121,19 @@ export default function NewScanPage() {
         </form>
       ) : (
         <form onSubmit={handleSubmitZip} className="space-y-6">
-          <div className="bg-gray-900 border border-gray-800 rounded-xl p-6 space-y-4">
+          <div className="bg-[#0b1a1f]/80 border border-[#1b2836] rounded-xl p-6 space-y-4">
             <label className="block">
-              <span className="text-sm font-medium text-gray-300">ZIP archive (max 50 MB)</span>
+              <span className="text-sm font-medium text-[#eaeff3]">ZIP archive (max 50 MB)</span>
               <input
                 type="file"
                 accept=".zip"
                 onChange={(e) => setZipFile(e.target.files?.[0] ?? null)}
                 disabled={scanning}
-                className="mt-2 w-full px-4 py-3 bg-gray-800 border border-gray-700 rounded-lg text-white file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-indigo-600 file:text-white file:text-sm file:font-medium disabled:opacity-50"
+                className="mt-2 w-full px-4 py-3 bg-black/20 border border-[#1b2836] rounded-lg text-[#eaeff3] file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-[#03e376] file:text-[#0a0f18] file:text-sm file:font-medium disabled:opacity-50"
               />
             </label>
             {zipFile && (
-              <p className="text-sm text-gray-500">
+              <p className="text-sm text-[color:var(--ss-text-muted)]">
                 Selected: {zipFile.name} ({(zipFile.size / 1024).toFixed(1)} KB)
               </p>
             )}
@@ -140,7 +148,7 @@ export default function NewScanPage() {
           <button
             type="submit"
             disabled={scanning || !zipFile}
-            className="w-full flex items-center justify-center gap-3 px-6 py-3.5 bg-indigo-600 text-white font-semibold rounded-lg hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            className="w-full flex items-center justify-center gap-3 px-6 py-3.5 bg-[#03e376] text-[#0a0f18] font-semibold rounded-lg hover:bg-[#47e297] disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-[0_0_25px_rgba(3,227,118,0.25)]"
           >
             {scanning ? (
               <>
@@ -160,20 +168,20 @@ export default function NewScanPage() {
         </form>
       )}
 
-      <div className="bg-gray-900/50 border border-gray-800 rounded-xl p-6">
-        <h3 className="text-sm font-semibold text-gray-300 mb-3">What gets scanned?</h3>
-        <ul className="space-y-2 text-sm text-gray-500">
+      <div className="bg-[#0b1a1f]/60 border border-[#1b2836] rounded-xl p-6">
+        <h3 className="text-sm font-semibold text-[#eaeff3] mb-3">What gets scanned?</h3>
+        <ul className="space-y-2 text-sm text-[color:var(--ss-text-muted)]">
           <li className="flex items-start gap-2">
-            <span className="text-indigo-400 mt-0.5">&#x2022;</span>
-            <span><strong className="text-gray-400">Semgrep</strong> &mdash; Static analysis for code vulnerabilities (SQL injection, XSS, etc.)</span>
+            <span className="text-[#03e376] mt-0.5">&#x2022;</span>
+            <span><strong className="text-[#eaeff3]">Semgrep</strong> &mdash; Static analysis for code vulnerabilities (SQL injection, XSS, etc.)</span>
           </li>
           <li className="flex items-start gap-2">
-            <span className="text-indigo-400 mt-0.5">&#x2022;</span>
-            <span><strong className="text-gray-400">TruffleHog</strong> &mdash; Secret detection (API keys, tokens, passwords)</span>
+            <span className="text-[#03e376] mt-0.5">&#x2022;</span>
+            <span><strong className="text-[#eaeff3]">TruffleHog</strong> &mdash; Secret detection (API keys, tokens, passwords)</span>
           </li>
           <li className="flex items-start gap-2">
-            <span className="text-indigo-400 mt-0.5">&#x2022;</span>
-            <span><strong className="text-gray-400">Dependency Audit</strong> &mdash; npm/composer vulnerability scanning</span>
+            <span className="text-[#03e376] mt-0.5">&#x2022;</span>
+            <span><strong className="text-[#eaeff3]">Dependency Audit</strong> &mdash; npm/composer vulnerability scanning</span>
           </li>
         </ul>
       </div>

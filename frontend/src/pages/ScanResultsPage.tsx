@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { fetchScan, applyFixes, fetchReport, type ScanDetail, type Finding } from '../api/scans';
+import { fetchScan, applyFixes, type ScanDetail } from '../api/scans';
 
 const SEVERITY_COLORS: Record<string, string> = {
   CRITICAL: 'bg-red-500/10 text-red-400 border-red-500/20',
@@ -23,7 +23,6 @@ export default function ScanResultsPage() {
   const [applyingFixes, setApplyingFixes] = useState(false);
   const [fixResult, setFixResult] = useState<{ branch: string | null; prUrl: string | null } | null>(null);
   const [fixError, setFixError] = useState<string | null>(null);
-  const [downloadingReport, setDownloadingReport] = useState(false);
 
   useEffect(() => {
     if (!id) return;
@@ -36,7 +35,7 @@ export default function ScanResultsPage() {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-indigo-500" />
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-[#03e376]" />
       </div>
     );
   }
@@ -95,24 +94,23 @@ export default function ScanResultsPage() {
       {/* Header */}
       <div className="flex items-start justify-between">
         <div>
-          <h1 className="text-3xl font-bold text-white">{scan.project.name}</h1>
-          <p className="text-gray-500 mt-1 text-sm">
+          <h1 className="text-3xl font-bold text-[#eaeff3]">{scan.project.name}</h1>
+          <p className="text-[color:var(--ss-text-muted)] mt-1 text-sm">
             {new Date(scan.executedAt).toLocaleString()} &middot; {scan.findings.length} findings
           </p>
         </div>
         <div className="flex gap-3">
           <button
             onClick={handleDownloadReport}
-            disabled={downloadingReport}
-            className="px-4 py-2 bg-gray-800 text-gray-300 border border-gray-700 rounded-lg hover:bg-gray-700 transition-colors text-sm font-medium disabled:opacity-50"
+            className="px-4 py-2 bg-black/20 text-[color:var(--ss-text-main)] border border-[#1b2836] rounded-lg hover:bg-white/5 transition-colors text-sm font-medium disabled:opacity-50"
           >
-            {downloadingReport ? 'Generating...' : 'Download PDF'}
+            Download PDF
           </button>
           {!scan.project.repositoryUrl.startsWith('upload:') && (
             <button
               onClick={handleApplyFixes}
               disabled={applyingFixes || fixResult !== null}
-              className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-500 transition-colors text-sm font-medium disabled:opacity-50"
+              className="px-4 py-2 bg-[#03e376] text-[#0a0f18] rounded-lg hover:bg-[#47e297] transition-colors text-sm font-medium disabled:opacity-50 shadow-[0_0_25px_rgba(3,227,118,0.25)]"
             >
               {applyingFixes ? 'Applying...' : fixResult ? 'Fixes Applied' : 'Apply Fixes & Create PR'}
             </button>
@@ -122,18 +120,18 @@ export default function ScanResultsPage() {
 
       {/* Fix Result */}
       {fixResult && fixResult.prUrl && (
-        <div className="bg-green-500/10 border border-green-500/20 rounded-xl p-4 flex items-center justify-between">
+        <div className="bg-[#0b1a1f]/80 border border-[#1f3b33] rounded-xl p-4 flex items-center justify-between">
           <div>
-            <p className="text-green-400 font-medium">Pull Request created successfully!</p>
+            <p className="text-[#03e376] font-medium">Pull Request created successfully!</p>
             {fixResult.branch && (
-              <p className="text-green-500/70 text-sm mt-0.5">Branch: {fixResult.branch}</p>
+              <p className="text-[color:var(--ss-text-muted)] text-sm mt-0.5">Branch: {fixResult.branch}</p>
             )}
           </div>
           <a
             href={fixResult.prUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-500 transition-colors text-sm font-medium"
+            className="px-4 py-2 bg-[#03e376] text-[#0a0f18] rounded-lg hover:bg-[#47e297] transition-colors text-sm font-medium"
           >
             View PR on GitHub
           </a>
@@ -149,7 +147,7 @@ export default function ScanResultsPage() {
       {/* Score + Severity Stats */}
       <div className="grid grid-cols-1 md:grid-cols-6 gap-6">
         {/* Score Gauge */}
-        <div className="md:col-span-2 bg-gray-900 border border-gray-800 rounded-xl p-6 flex flex-col items-center justify-center">
+        <div className="md:col-span-2 bg-[#0b1a1f]/80 border border-[#1b2836] rounded-xl p-6 flex flex-col items-center justify-center">
           <div className="relative w-32 h-32">
             <svg className="w-32 h-32 -rotate-90" viewBox="0 0 120 120">
               <circle cx="60" cy="60" r="54" fill="none" stroke="#1f2937" strokeWidth="8" />
@@ -165,17 +163,17 @@ export default function ScanResultsPage() {
               <span className={`text-3xl font-bold ${scoreColor}`}>{score.toFixed(0)}</span>
             </div>
           </div>
-          <p className="text-gray-500 text-sm mt-3">Security Score</p>
+          <p className="text-[color:var(--ss-text-muted)] text-sm mt-3">Security Score</p>
         </div>
 
         {/* Severity Breakdown */}
         <div className="md:col-span-4 grid grid-cols-2 sm:grid-cols-5 gap-3">
           {SEVERITY_ORDER.map((sev) => (
-            <div key={sev} className="bg-gray-900 border border-gray-800 rounded-xl p-4 text-center">
+            <div key={sev} className="bg-[#0b1a1f]/80 border border-[#1b2836] rounded-xl p-4 text-center">
               <p className={`text-2xl font-bold ${SEVERITY_COLORS[sev]?.split(' ')[1] || 'text-gray-400'}`}>
                 {severityCounts[sev] || 0}
               </p>
-              <p className="text-xs text-gray-500 mt-1">{sev}</p>
+              <p className="text-xs text-[color:var(--ss-text-muted)] mt-1">{sev}</p>
             </div>
           ))}
         </div>
@@ -186,7 +184,7 @@ export default function ScanResultsPage() {
         <select
           value={filterSeverity}
           onChange={(e) => setFilterSeverity(e.target.value)}
-          className="px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-sm text-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+          className="px-3 py-2 bg-black/20 border border-[#1b2836] rounded-lg text-sm text-[color:var(--ss-text-main)] focus:outline-none focus:ring-2 focus:ring-[#03e376]"
         >
           <option value="">All Severities</option>
           {SEVERITY_ORDER.map((s) => (
@@ -197,7 +195,7 @@ export default function ScanResultsPage() {
         <select
           value={filterTool}
           onChange={(e) => setFilterTool(e.target.value)}
-          className="px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-sm text-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+          className="px-3 py-2 bg-black/20 border border-[#1b2836] rounded-lg text-sm text-[color:var(--ss-text-main)] focus:outline-none focus:ring-2 focus:ring-[#03e376]"
         >
           <option value="">All Tools</option>
           {tools.map((t) => (
@@ -208,7 +206,7 @@ export default function ScanResultsPage() {
         <select
           value={filterOwasp}
           onChange={(e) => setFilterOwasp(e.target.value)}
-          className="px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-sm text-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+          className="px-3 py-2 bg-black/20 border border-[#1b2836] rounded-lg text-sm text-[color:var(--ss-text-main)] focus:outline-none focus:ring-2 focus:ring-[#03e376]"
         >
           <option value="">All OWASP</option>
           {owaspCategories.map((c) => (
@@ -225,38 +223,38 @@ export default function ScanResultsPage() {
           <option value="file">Sort by File</option>
         </select>
 
-        <span className="px-3 py-2 text-sm text-gray-500">
+        <span className="px-3 py-2 text-sm text-[color:var(--ss-text-muted)]">
           {filtered.length} of {scan.findings.length} findings
         </span>
       </div>
 
       {/* Findings Table */}
-      <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+      <div className="bg-[#0b1a1f]/80 border border-[#1b2836] rounded-xl overflow-hidden">
         <table className="w-full text-sm">
           <thead>
-            <tr className="border-b border-gray-800 text-left">
-              <th className="px-4 py-3 text-gray-400 font-medium">Severity</th>
-              <th className="px-4 py-3 text-gray-400 font-medium">Tool</th>
-              <th className="px-4 py-3 text-gray-400 font-medium">File</th>
-              <th className="px-4 py-3 text-gray-400 font-medium">OWASP</th>
-              <th className="px-4 py-3 text-gray-400 font-medium">Description</th>
+            <tr className="border-b border-[#1b2836] text-left">
+              <th className="px-4 py-3 text-[color:var(--ss-text-muted)] font-medium">Severity</th>
+              <th className="px-4 py-3 text-[color:var(--ss-text-muted)] font-medium">Tool</th>
+              <th className="px-4 py-3 text-[color:var(--ss-text-muted)] font-medium">File</th>
+              <th className="px-4 py-3 text-[color:var(--ss-text-muted)] font-medium">OWASP</th>
+              <th className="px-4 py-3 text-[color:var(--ss-text-muted)] font-medium">Description</th>
             </tr>
           </thead>
           <tbody>
             {filtered.map((finding) => (
-              <tr key={finding.id} className="border-b border-gray-800/50 hover:bg-gray-800/30">
+                <tr key={finding.id} className="border-b border-[#1b2836]/60 hover:bg-white/5">
                 <td className="px-4 py-3">
                   <span className={`px-2 py-0.5 rounded text-xs font-medium border ${SEVERITY_COLORS[finding.severity] || ''}`}>
                     {finding.severity}
                   </span>
                 </td>
-                <td className="px-4 py-3 text-gray-400">{finding.toolSource}</td>
-                <td className="px-4 py-3 text-gray-300 font-mono text-xs">
+                <td className="px-4 py-3 text-[color:var(--ss-text-muted)]">{finding.toolSource}</td>
+                <td className="px-4 py-3 text-[#eaeff3] font-mono text-xs">
                   {finding.filePath}
-                  {finding.lineNumber && <span className="text-gray-500">:{finding.lineNumber}</span>}
+                  {finding.lineNumber && <span className="text-[color:var(--ss-text-muted)]">:{finding.lineNumber}</span>}
                 </td>
-                <td className="px-4 py-3 text-gray-400">{finding.owaspCategory || '—'}</td>
-                <td className="px-4 py-3 text-gray-300 max-w-md truncate">{finding.description}</td>
+                <td className="px-4 py-3 text-[color:var(--ss-text-muted)]">{finding.owaspCategory || '—'}</td>
+                <td className="px-4 py-3 text-[#eaeff3] max-w-md truncate">{finding.description}</td>
               </tr>
             ))}
             {filtered.length === 0 && (

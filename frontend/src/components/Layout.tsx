@@ -11,26 +11,27 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   const location = useLocation();
 
   return (
-    <div className="min-h-screen bg-gray-950 flex">
+    <div className="min-h-screen app-bg flex text-[color:var(--ss-text-main)]">
       {/* Sidebar */}
-      <aside className="w-64 bg-gray-900 border-r border-gray-800 flex flex-col">
-        <div className="p-6">
-          <Link to="/dashboard" className="text-2xl font-bold text-white tracking-tight">
-            Secure<span className="text-indigo-500">Scan</span>
+      <aside className="w-64 bg-black/20 border-r border-[#1b2836] flex flex-col backdrop-blur-xl">
+        <div className="p-6 border-b border-[#1b2836]">
+          <Link to="/dashboard" className="text-2xl font-bold tracking-tight">
+            <span className="text-[#eaeff3]">Secure</span>
+            <span className="text-[#03e376]">Scan</span>
           </Link>
         </div>
 
-        <nav className="flex-1 px-4 space-y-1">
+        <nav className="flex-1 px-4 py-4 space-y-1">
           {navItems.map((item) => {
             const active = location.pathname === item.path;
             return (
               <Link
                 key={item.path}
                 to={item.path}
-                className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+                className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors border border-transparent ${
                   active
-                    ? 'bg-indigo-600/20 text-indigo-400'
-                    : 'text-gray-400 hover:text-white hover:bg-gray-800'
+                    ? 'bg-[#0b1a1f] text-[#03e376] border-[#1f3b33] shadow-[0_0_25px_rgba(3,227,118,0.25)]'
+                    : 'text-[color:var(--ss-text-muted)] hover:text-[color:var(--ss-text-main)] hover:bg-white/5 hover:border-white/5'
                 }`}
               >
                 <svg className="w-5 h-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
@@ -44,21 +45,21 @@ export default function Layout({ children }: { children: React.ReactNode }) {
 
         {/* User */}
         {user && (
-          <div className="p-4 border-t border-gray-800">
+          <div className="p-4 border-t border-[#1b2836]">
             <div className="flex items-center gap-3">
               {user.avatarUrl ? (
                 <img src={user.avatarUrl} alt="" className="w-8 h-8 rounded-full" />
               ) : (
-                <div className="w-8 h-8 rounded-full bg-gray-700 flex items-center justify-center text-sm text-white font-medium">
+                <div className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center text-sm text-[#eaeff3] font-medium">
                   {user.username[0]?.toUpperCase()}
                 </div>
               )}
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-white truncate">{user.username}</p>
+                <p className="text-sm font-medium text-[#eaeff3] truncate">{user.username}</p>
               </div>
               <button
                 onClick={logout}
-                className="text-gray-500 hover:text-red-400 transition-colors"
+                className="text-[color:var(--ss-text-muted)] hover:text-red-400 transition-colors"
                 title="Logout"
               >
                 <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>

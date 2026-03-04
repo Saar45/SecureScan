@@ -57,7 +57,7 @@ export default function DashboardPage() {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-indigo-500" />
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-[#03e376]" />
       </div>
     );
   }
@@ -67,12 +67,12 @@ export default function DashboardPage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold text-white">Dashboard</h1>
-          <p className="text-gray-400 mt-1">Overview of your security scans</p>
+          <h1 className="text-3xl font-bold text-[#eaeff3]">Dashboard</h1>
+          <p className="text-[color:var(--ss-text-muted)] mt-1">Overview of your security scans</p>
         </div>
         <Link
           to="/scan/new"
-          className="px-5 py-2.5 bg-indigo-600 text-white font-medium rounded-lg hover:bg-indigo-500 transition-colors"
+          className="px-5 py-2.5 bg-[#03e376] text-[#0a0f18] font-medium rounded-lg hover:bg-[#47e297] transition-colors shadow-[0_0_25px_rgba(3,227,118,0.25)]"
         >
           New Scan
         </Link>
@@ -80,16 +80,16 @@ export default function DashboardPage() {
 
       {/* Stats */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <div className="bg-gray-900 border border-gray-800 rounded-xl p-6">
-          <p className="text-sm text-gray-500">Total Scans</p>
-          <p className="text-3xl font-bold text-white mt-1">{scans.length}</p>
+        <div className="bg-[#0b1a1f]/80 border border-[#1b2836] rounded-xl p-6">
+          <p className="text-sm text-[color:var(--ss-text-muted)]">Total Scans</p>
+          <p className="text-3xl font-bold text-[#eaeff3] mt-1">{scans.length}</p>
         </div>
-        <div className="bg-gray-900 border border-gray-800 rounded-xl p-6">
-          <p className="text-sm text-gray-500">Total Findings</p>
-          <p className="text-3xl font-bold text-white mt-1">{totalFindings}</p>
+        <div className="bg-[#0b1a1f]/80 border border-[#1b2836] rounded-xl p-6">
+          <p className="text-sm text-[color:var(--ss-text-muted)]">Total Findings</p>
+          <p className="text-3xl font-bold text-[#eaeff3] mt-1">{totalFindings}</p>
         </div>
-        <div className="bg-gray-900 border border-gray-800 rounded-xl p-6">
-          <p className="text-sm text-gray-500">Average Score</p>
+        <div className="bg-[#0b1a1f]/80 border border-[#1b2836] rounded-xl p-6">
+          <p className="text-sm text-[color:var(--ss-text-muted)]">Average Score</p>
           <p className={`text-3xl font-bold mt-1 ${avgScore >= 70 ? 'text-green-400' : avgScore >= 40 ? 'text-yellow-400' : 'text-red-400'}`}>
             {avgScore > 0 ? avgScore.toFixed(1) : '—'}/100
           </p>
@@ -101,8 +101,8 @@ export default function DashboardPage() {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           {/* Severity Pie */}
           {pieData.length > 0 && (
-            <div className="bg-gray-900 border border-gray-800 rounded-xl p-6">
-              <h3 className="text-lg font-semibold text-white mb-4">Severity Distribution</h3>
+            <div className="bg-[#0b1a1f]/80 border border-[#1b2836] rounded-xl p-6">
+              <h3 className="text-lg font-semibold text-[#eaeff3] mb-4">Severity Distribution</h3>
               <ResponsiveContainer width="100%" height={250}>
                 <PieChart>
                   <Pie data={pieData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={80} label={({ name, value }) => `${name}: ${value}`}>
@@ -110,7 +110,7 @@ export default function DashboardPage() {
                       <Cell key={i} fill={entry.color} />
                     ))}
                   </Pie>
-                  <Tooltip contentStyle={{ backgroundColor: '#1f2937', border: '1px solid #374151', borderRadius: '8px', color: '#fff' }} />
+                  <Tooltip contentStyle={{ backgroundColor: '#0b1a1f', border: '1px solid #1b2836', borderRadius: '8px', color: '#eaeff3' }} />
                 </PieChart>
               </ResponsiveContainer>
             </div>
@@ -118,14 +118,14 @@ export default function DashboardPage() {
 
           {/* Score Bar */}
           {scoreData.length > 0 && (
-            <div className="bg-gray-900 border border-gray-800 rounded-xl p-6">
-              <h3 className="text-lg font-semibold text-white mb-4">Scan Scores</h3>
+            <div className="bg-[#0b1a1f]/80 border border-[#1b2836] rounded-xl p-6">
+              <h3 className="text-lg font-semibold text-[#eaeff3] mb-4">Scan Scores</h3>
               <ResponsiveContainer width="100%" height={250}>
                 <BarChart data={scoreData}>
-                  <XAxis dataKey="name" tick={{ fill: '#9ca3af', fontSize: 12 }} />
-                  <YAxis domain={[0, 100]} tick={{ fill: '#9ca3af', fontSize: 12 }} />
-                  <Tooltip contentStyle={{ backgroundColor: '#1f2937', border: '1px solid #374151', borderRadius: '8px', color: '#fff' }} />
-                  <Bar dataKey="score" fill="#6366f1" radius={[4, 4, 0, 0]} />
+                  <XAxis dataKey="name" tick={{ fill: '#919ba5', fontSize: 12 }} />
+                  <YAxis domain={[0, 100]} tick={{ fill: '#919ba5', fontSize: 12 }} />
+                  <Tooltip contentStyle={{ backgroundColor: '#0b1a1f', border: '1px solid #1b2836', borderRadius: '8px', color: '#eaeff3' }} />
+                  <Bar dataKey="score" fill="#03e376" radius={[4, 4, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             </div>
@@ -135,14 +135,14 @@ export default function DashboardPage() {
 
       {/* Recent Scans */}
       <div>
-        <h2 className="text-xl font-semibold text-white mb-4">Recent Scans</h2>
+        <h2 className="text-xl font-semibold text-[#eaeff3] mb-4">Recent Scans</h2>
         {scans.length === 0 ? (
-          <div className="bg-gray-900 border border-gray-800 rounded-xl p-12 text-center">
-            <p className="text-gray-400 text-lg">No scans yet</p>
-            <p className="text-gray-500 text-sm mt-1">Start by scanning a repository</p>
+          <div className="bg-[#0b1a1f]/80 border border-[#1b2836] rounded-xl p-12 text-center">
+            <p className="text-[color:var(--ss-text-muted)] text-lg">No scans yet</p>
+            <p className="text-[color:var(--ss-text-muted)] text-sm mt-1">Start by scanning a repository</p>
             <Link
               to="/scan/new"
-              className="inline-block mt-4 px-5 py-2.5 bg-indigo-600 text-white font-medium rounded-lg hover:bg-indigo-500 transition-colors"
+              className="inline-block mt-4 px-5 py-2.5 bg-[#03e376] text-[#0a0f18] font-medium rounded-lg hover:bg-[#47e297] transition-colors shadow-[0_0_25px_rgba(3,227,118,0.25)]"
             >
               New Scan
             </Link>
@@ -153,12 +153,12 @@ export default function DashboardPage() {
               <Link
                 key={scan.id}
                 to={`/scan/${scan.id}`}
-                className="bg-gray-900 border border-gray-800 rounded-xl p-5 hover:border-gray-700 transition-colors flex items-center justify-between"
+                className="bg-[#0b1a1f]/80 border border-[#1b2836] rounded-xl p-5 hover:border-[#2c3f57] transition-colors flex items-center justify-between"
               >
                 <div className="flex items-center gap-4">
                   <div>
-                    <p className="text-white font-medium">{scan.project.name}</p>
-                    <p className="text-gray-500 text-sm mt-0.5">
+                    <p className="text-[#eaeff3] font-medium">{scan.project.name}</p>
+                    <p className="text-[color:var(--ss-text-muted)] text-sm mt-0.5">
                       {new Date(scan.executedAt).toLocaleDateString()} &middot; {scan.findingsCount} findings
                     </p>
                   </div>
