@@ -15,3 +15,19 @@ export async function fetchMe(): Promise<UserInfo> {
 export async function logout(): Promise<void> {
   await client.post('/auth/logout');
 }
+
+export interface GitHubRepo {
+  id: number;
+  name: string;
+  fullName: string;
+  cloneUrl: string;
+  description: string | null;
+  language: string | null;
+  private: boolean;
+  pushedAt: string | null;
+}
+
+export async function fetchGitHubRepos(): Promise<GitHubRepo[]> {
+  const { data } = await client.get<GitHubRepo[]>('/auth/github/repos');
+  return data;
+}

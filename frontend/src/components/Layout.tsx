@@ -1,5 +1,6 @@
 import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import SidebarRepos from './SidebarRepos';
 
 const navItems = [
   { path: '/dashboard', label: 'Dashboard', icon: 'M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-4 0a1 1 0 01-1-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 01-1 1' },
@@ -21,7 +22,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           </Link>
         </div>
 
-        <nav className="flex-1 px-4 py-4 space-y-1">
+        <nav className="px-4 py-4 space-y-1">
           {navItems.map((item) => {
             const active = location.pathname === item.path;
             return (
@@ -42,6 +43,10 @@ export default function Layout({ children }: { children: React.ReactNode }) {
             );
           })}
         </nav>
+
+        <div className="flex-1 min-h-0 border-t border-[#1b2836]">
+          <SidebarRepos />
+        </div>
 
         {/* User */}
         {user && (
