@@ -96,7 +96,7 @@ export default function ScanResultsPage() {
         <div>
           <h1 className="text-3xl font-bold text-[#eaeff3]">{scan.project.name}</h1>
           <p className="text-[color:var(--ss-text-muted)] mt-1 text-sm">
-            {new Date(scan.executedAt).toLocaleString()} &middot; {scan.findings.length} findings
+            {new Date(scan.executedAt).toLocaleString()} &middot; {scan.findings.length} erreurs
           </p>
         </div>
         <div className="flex gap-3">
@@ -104,7 +104,7 @@ export default function ScanResultsPage() {
             onClick={handleDownloadReport}
             className="px-4 py-2 bg-black/20 text-[color:var(--ss-text-main)] border border-[#1b2836] rounded-lg hover:bg-white/5 transition-colors text-sm font-medium disabled:opacity-50"
           >
-            Download PDF
+            Télécharger le PDF
           </button>
           {!scan.project.repositoryUrl.startsWith('upload:') && (
             <button
@@ -112,7 +112,7 @@ export default function ScanResultsPage() {
               disabled={applyingFixes || fixResult !== null}
               className="px-4 py-2 bg-[#03e376] text-[#0a0f18] rounded-lg hover:bg-[#47e297] transition-colors text-sm font-medium disabled:opacity-50 shadow-[0_0_25px_rgba(3,227,118,0.25)]"
             >
-              {applyingFixes ? 'Applying...' : fixResult ? 'Fixes Applied' : 'Apply Fixes & Create PR'}
+              {applyingFixes ? 'Apapplication des correctifs en cours...' : fixResult ? 'Correctifs appliqués' : 'Appliquer les correctifs & Créer PR'}
             </button>
           )}
         </div>
@@ -122,7 +122,7 @@ export default function ScanResultsPage() {
       {fixResult && fixResult.prUrl && (
         <div className="bg-[#0b1a1f]/80 border border-[#1f3b33] rounded-xl p-4 flex items-center justify-between">
           <div>
-            <p className="text-[#03e376] font-medium">Pull Request created successfully!</p>
+            <p className="text-[#03e376] font-medium">Pull Request créée avec succès !</p>
             {fixResult.branch && (
               <p className="text-[color:var(--ss-text-muted)] text-sm mt-0.5">Branch: {fixResult.branch}</p>
             )}
@@ -133,7 +133,7 @@ export default function ScanResultsPage() {
             rel="noopener noreferrer"
             className="px-4 py-2 bg-[#03e376] text-[#0a0f18] rounded-lg hover:bg-[#47e297] transition-colors text-sm font-medium"
           >
-            View PR on GitHub
+            Voir la PR sur GitHub
           </a>
         </div>
       )}
@@ -163,7 +163,7 @@ export default function ScanResultsPage() {
               <span className={`text-3xl font-bold ${scoreColor}`}>{score.toFixed(0)}</span>
             </div>
           </div>
-          <p className="text-[color:var(--ss-text-muted)] text-sm mt-3">Security Score</p>
+          <p className="text-[color:var(--ss-text-muted)] text-sm mt-3">Score de Sécurité</p>
         </div>
 
         {/* Severity Breakdown */}
@@ -186,7 +186,7 @@ export default function ScanResultsPage() {
           onChange={(e) => setFilterSeverity(e.target.value)}
           className="px-3 py-2 bg-black/20 border border-[#1b2836] rounded-lg text-sm text-[color:var(--ss-text-main)] focus:outline-none focus:ring-2 focus:ring-[#03e376]"
         >
-          <option value="">All Severities</option>
+          <option value="">Toutes les sévérités</option>
           {SEVERITY_ORDER.map((s) => (
             <option key={s} value={s}>{s}</option>
           ))}
@@ -197,7 +197,7 @@ export default function ScanResultsPage() {
           onChange={(e) => setFilterTool(e.target.value)}
           className="px-3 py-2 bg-black/20 border border-[#1b2836] rounded-lg text-sm text-[color:var(--ss-text-main)] focus:outline-none focus:ring-2 focus:ring-[#03e376]"
         >
-          <option value="">All Tools</option>
+          <option value="">Tous les outils</option>
           {tools.map((t) => (
             <option key={t} value={t}>{t}</option>
           ))}
@@ -208,7 +208,7 @@ export default function ScanResultsPage() {
           onChange={(e) => setFilterOwasp(e.target.value)}
           className="px-3 py-2 bg-black/20 border border-[#1b2836] rounded-lg text-sm text-[color:var(--ss-text-main)] focus:outline-none focus:ring-2 focus:ring-[#03e376]"
         >
-          <option value="">All OWASP</option>
+          <option value="">Tout OWASP</option>
           {owaspCategories.map((c) => (
             <option key={c} value={c}>{c}</option>
           ))}
@@ -219,12 +219,12 @@ export default function ScanResultsPage() {
           onChange={(e) => setSortBy(e.target.value as 'severity' | 'file')}
           className="px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-sm text-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-500"
         >
-          <option value="severity">Sort by Severity</option>
-          <option value="file">Sort by File</option>
+          <option value="severity">Trier par gravité</option>
+          <option value="file">Trier par fichier</option>
         </select>
 
         <span className="px-3 py-2 text-sm text-[color:var(--ss-text-muted)]">
-          {filtered.length} of {scan.findings.length} findings
+          {filtered.length} of {scan.findings.length} erreurs
         </span>
       </div>
 
@@ -233,9 +233,9 @@ export default function ScanResultsPage() {
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-[#1b2836] text-left">
-              <th className="px-4 py-3 text-[color:var(--ss-text-muted)] font-medium">Severity</th>
-              <th className="px-4 py-3 text-[color:var(--ss-text-muted)] font-medium">Tool</th>
-              <th className="px-4 py-3 text-[color:var(--ss-text-muted)] font-medium">File</th>
+              <th className="px-4 py-3 text-[color:var(--ss-text-muted)] font-medium">Sévérité</th>
+              <th className="px-4 py-3 text-[color:var(--ss-text-muted)] font-medium">Outil</th>
+              <th className="px-4 py-3 text-[color:var(--ss-text-muted)] font-medium">Fichier</th>
               <th className="px-4 py-3 text-[color:var(--ss-text-muted)] font-medium">OWASP</th>
               <th className="px-4 py-3 text-[color:var(--ss-text-muted)] font-medium">Description</th>
             </tr>

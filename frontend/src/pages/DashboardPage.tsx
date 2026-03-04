@@ -68,28 +68,28 @@ export default function DashboardPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold text-[#eaeff3]">Dashboard</h1>
-          <p className="text-[color:var(--ss-text-muted)] mt-1">Overview of your security scans</p>
+          <p className="text-[color:var(--ss-text-muted)] mt-1">Aperçu de vos analyses de sécurité</p>
         </div>
         <Link
           to="/scan/new"
           className="px-5 py-2.5 bg-[#03e376] text-[#0a0f18] font-medium rounded-lg hover:bg-[#47e297] transition-colors shadow-[0_0_25px_rgba(3,227,118,0.25)]"
         >
-          New Scan
+          Nouvelle analyse
         </Link>
       </div>
 
       {/* Stats */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <div className="bg-[#0b1a1f]/80 border border-[#1b2836] rounded-xl p-6">
-          <p className="text-sm text-[color:var(--ss-text-muted)]">Total Scans</p>
+          <p className="text-sm text-[color:var(--ss-text-muted)]">Total des Analyses</p>
           <p className="text-3xl font-bold text-[#eaeff3] mt-1">{scans.length}</p>
         </div>
         <div className="bg-[#0b1a1f]/80 border border-[#1b2836] rounded-xl p-6">
-          <p className="text-sm text-[color:var(--ss-text-muted)]">Total Findings</p>
+          <p className="text-sm text-[color:var(--ss-text-muted)]">Total des Erreurs</p>
           <p className="text-3xl font-bold text-[#eaeff3] mt-1">{totalFindings}</p>
         </div>
         <div className="bg-[#0b1a1f]/80 border border-[#1b2836] rounded-xl p-6">
-          <p className="text-sm text-[color:var(--ss-text-muted)]">Average Score</p>
+          <p className="text-sm text-[color:var(--ss-text-muted)]">Score Global </p>
           <p className={`text-3xl font-bold mt-1 ${avgScore >= 70 ? 'text-green-400' : avgScore >= 40 ? 'text-yellow-400' : 'text-red-400'}`}>
             {avgScore > 0 ? avgScore.toFixed(1) : '—'}/100
           </p>
@@ -135,16 +135,16 @@ export default function DashboardPage() {
 
       {/* Recent Scans */}
       <div>
-        <h2 className="text-xl font-semibold text-[#eaeff3] mb-4">Recent Scans</h2>
+        <h2 className="text-xl font-semibold text-[#eaeff3] mb-4">Précédentes analyses</h2>
         {scans.length === 0 ? (
           <div className="bg-[#0b1a1f]/80 border border-[#1b2836] rounded-xl p-12 text-center">
-            <p className="text-[color:var(--ss-text-muted)] text-lg">No scans yet</p>
-            <p className="text-[color:var(--ss-text-muted)] text-sm mt-1">Start by scanning a repository</p>
+            <p className="text-[color:var(--ss-text-muted)] text-lg">Pas encore d'analyses</p>
+            <p className="text-[color:var(--ss-text-muted)] text-sm mt-1">Commencez par analyser un dépôt</p>
             <Link
               to="/scan/new"
               className="inline-block mt-4 px-5 py-2.5 bg-[#03e376] text-[#0a0f18] font-medium rounded-lg hover:bg-[#47e297] transition-colors shadow-[0_0_25px_rgba(3,227,118,0.25)]"
             >
-              New Scan
+              Nouvelle analyse
             </Link>
           </div>
         ) : (

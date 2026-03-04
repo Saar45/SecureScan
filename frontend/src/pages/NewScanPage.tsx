@@ -47,8 +47,8 @@ export default function NewScanPage() {
   return (
     <div className="max-w-2xl mx-auto space-y-8">
       <div>
-        <h1 className="text-3xl font-bold text-[#eaeff3]">New Scan</h1>
-        <p className="text-[color:var(--ss-text-muted)] mt-1">Scan a Git repository by URL or upload a ZIP archive of your code</p>
+        <h1 className="text-3xl font-bold text-[#eaeff3]">Nouvelle analyse</h1>
+        <p className="text-[color:var(--ss-text-muted)] mt-1">Scannez un dépôt Git par URL ou téléchargez une archive ZIP de votre code.</p>
       </div>
 
       <div className="flex rounded-lg bg-[#0b1a1f]/80 border border-[#1b2836] p-1">
@@ -107,14 +107,14 @@ export default function NewScanPage() {
             {scanning ? (
               <>
                 <div className="animate-spin rounded-full h-5 w-5 border-t-2 border-b-2 border-white" />
-                Scanning... This may take a few minutes
+                Analyse en cours... Cela peut prendre quelques minutes
               </>
             ) : (
               <>
                 <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                 </svg>
-                Start Scan
+                Démarrer l'analyse
               </>
             )}
           </button>
@@ -153,7 +153,7 @@ export default function NewScanPage() {
             {scanning ? (
               <>
                 <div className="animate-spin rounded-full h-5 w-5 border-t-2 border-b-2 border-white" />
-                Uploading & scanning... This may take a few minutes
+                Téléchargement et numérisation en cours… Cela peut prendre quelques minutes.
               </>
             ) : (
               <>
@@ -161,7 +161,7 @@ export default function NewScanPage() {
                   <path strokeLinecap="round" strokeLinejoin="round" d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 012 2v10a2 2 0 01-2 2z" />
                   <path strokeLinecap="round" strokeLinejoin="round" d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2" />
                 </svg>
-                Upload & Scan
+                Télécharger et analyser
               </>
             )}
           </button>
@@ -169,19 +169,19 @@ export default function NewScanPage() {
       )}
 
       <div className="bg-[#0b1a1f]/60 border border-[#1b2836] rounded-xl p-6">
-        <h3 className="text-sm font-semibold text-[#eaeff3] mb-3">What gets scanned?</h3>
+        <h3 className="text-sm font-semibold text-[#eaeff3] mb-3">Qu'est-ce qui est scanné ?</h3>
         <ul className="space-y-2 text-sm text-[color:var(--ss-text-muted)]">
           <li className="flex items-start gap-2">
             <span className="text-[#03e376] mt-0.5">&#x2022;</span>
-            <span><strong className="text-[#eaeff3]">Semgrep</strong> &mdash; Static analysis for code vulnerabilities (SQL injection, XSS, etc.)</span>
+            <span><strong className="text-[#eaeff3]">Semgrep</strong> &mdash; Analyse statique des vulnérabilités du code (injection SQL, XSS, etc.)</span>
           </li>
           <li className="flex items-start gap-2">
             <span className="text-[#03e376] mt-0.5">&#x2022;</span>
-            <span><strong className="text-[#eaeff3]">TruffleHog</strong> &mdash; Secret detection (API keys, tokens, passwords)</span>
+            <span><strong className="text-[#eaeff3]">TruffleHog</strong> &mdash; Détection des secrets (clés API, jetons, mots de passe)</span>
           </li>
           <li className="flex items-start gap-2">
             <span className="text-[#03e376] mt-0.5">&#x2022;</span>
-            <span><strong className="text-[#eaeff3]">Dependency Audit</strong> &mdash; npm/composer vulnerability scanning</span>
+            <span><strong className="text-[#eaeff3]">Dependency Audit</strong> &mdash; analyse des vulnérabilités de npm/composer</span>
           </li>
         </ul>
       </div>
