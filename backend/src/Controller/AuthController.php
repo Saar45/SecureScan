@@ -16,7 +16,8 @@ class AuthController extends AbstractController
     public function githubRedirect(): RedirectResponse
     {
         $clientId = $_ENV['GITHUB_CLIENT_ID'] ?? '';
-        $redirectUri = 'http://localhost:3000/api/auth/github/callback';
+        // Doit être identique à "Authorization callback URL" dans GitHub OAuth App (pas de slash final).
+        $redirectUri = !empty($_ENV['GITHUB_CALLBACK_URL']) ? $_ENV['GITHUB_CALLBACK_URL'] : 'http://localhost:3000/api/auth/github/callback';
         $scope = 'repo user:email';
 
         $url = sprintf(

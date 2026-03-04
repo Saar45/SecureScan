@@ -11,10 +11,12 @@ use App\Service\ScanManager;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
+use Symfony\Component\HttpFoundation\File\UploadedFile;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\ResponseHeaderBag;
 use Symfony\Component\Routing\Attribute\Route;
+use Symfony\Component\Uid\Uuid;
 
 #[Route('/api/scans')]
 class ScanController extends AbstractController
@@ -60,6 +62,81 @@ class ScanController extends AbstractController
         }
 
         $scan = $this->scanManager->startScan($project);
+
+        return $this->json([
+            'id' => $scan->getId(),
+            'projectId' => $project->getId(),
+            'status' => $scan->getStatus(),
+            'globalScore' => $scan->getGlobalScore(),
+            'executedAt' => $scan->getExecutedAt()->format('c'),
+            'findingsCount' => $scan->getFindings()->count(),
+        ], 201);
+    }
+
+    private const MAX_ARCHIVE_SIZE_BYTES = 50 * 1024 * 1024; // 50 MB
+
+    #[Route('/from-archive', methods: ['POST'], name: 'scans_from_archive')]
+    public function fromArchive(Request $request): JsonResponse
+    {
+        /** @var UploadedFile|null $file */
+        $file = $request->files->get('archive');
+
+        if (!$file instanceof UploadedFile || !$file->isValid()) {
+            return $this->json(['error' => 'A valid ZIP archive is required (field name: archive)'], 400);
+        }
+
+        $ext = strtolower($file->getClientOriginalExtension());
+        if ($ext !== 'zip') {
+            return $this->json(['error' => 'Only .zip archives are accepted'], 400);
+        }
+
+        if ($file->getSize() > self::MAX_ARCHIVE_SIZE_BYTES) {
+            return $this->json(['error' => 'Archive size must not exceed 50 MB'], 400);
+        }
+
+        $baseDir = '/tmp/scans';
+        if (!is_dir($baseDir)) {
+            @mkdir($baseDir, 0777, true);
+        }
+
+        $workdir = $baseDir . '/' . Uuid::v4()->toRfc4122();
+        @mkdir($workdir, 0777, true);
+
+        $zip = new \ZipArchive();
+        if ($zip->open($file->getPathname(), \ZipArchive::RDONLY) !== true) {
+            return $this->json(['error' => 'Invalid or corrupted ZIP file'], 400);
+        }
+
+        $zip->extractTo($workdir);
+        $zip->close();
+
+        // Ensure extracted files are readable by the process (e.g. www-data) and child tools
+        $this->chmodRecursive($workdir, 0755);
+
+        $entries = array_values(array_diff(scandir($workdir), ['.', '..']));
+        $effectiveWorkdir = $workdir;
+
+        if (\count($entries) === 1 && is_dir($workdir . '/' . $entries[0])) {
+            $effectiveWorkdir = $workdir . '/' . $entries[0];
+        } else {
+            // Multiple entries: look for a subdir that contains package.json or composer.json (project root)
+            foreach ($entries as $entry) {
+                $path = $workdir . '/' . $entry;
+                if (is_dir($path) && (file_exists($path . '/package.json') || file_exists($path . '/composer.json'))) {
+                    $effectiveWorkdir = $path;
+                    break;
+                }
+            }
+        }
+
+        $originalName = $file->getClientOriginalName();
+        $project = new Project();
+        $project->setName('Upload: ' . $originalName);
+        $project->setRepositoryUrl('upload:' . $originalName);
+        $this->entityManager->persist($project);
+        $this->entityManager->flush();
+
+        $scan = $this->scanManager->startScanFromWorkdir($project, $effectiveWorkdir);
 
         return $this->json([
             'id' => $scan->getId(),
@@ -176,6 +253,10 @@ class ScanController extends AbstractController
             return $this->json(['error' => 'Scan workdir not available'], 400);
         }
 
+        if (str_starts_with($scan->getProject()->getRepositoryUrl(), 'upload:')) {
+            return $this->json(['error' => 'Apply Fixes & PR is only available for scans from a Git repository, not for ZIP uploads'], 400);
+        }
+
         $user = $this->getUser();
         $token = $user instanceof User ? $user->getGithubToken() : null;
 
@@ -238,5 +319,28 @@ class ScanController extends AbstractController
         }
 
         return 'Unknown Project';
+    }
+
+    private function chmodRecursive(string $dir, int $mode): void
+    {
+        if (!is_dir($dir)) {
+            return;
+        }
+
+        $items = @scandir($dir);
+        if ($items === false) {
+            return;
+        }
+
+        foreach ($items as $item) {
+            if ($item === '.' || $item === '..') {
+                continue;
+            }
+            $path = $dir . '/' . $item;
+            @chmod($path, $mode);
+            if (is_dir($path)) {
+                $this->chmodRecursive($path, $mode);
+            }
+        }
     }
 }

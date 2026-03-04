@@ -53,6 +53,15 @@ export async function createScan(repositoryUrl: string): Promise<{ id: string; p
   return data;
 }
 
+export async function uploadScanArchive(file: File): Promise<{ id: string; projectId: string; status: string; globalScore: string | null; findingsCount: number }> {
+  const form = new FormData();
+  form.append('archive', file);
+  const { data } = await client.post('/scans/from-archive', form, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  });
+  return data;
+}
+
 export async function fetchScan(id: string): Promise<ScanDetail> {
   const { data } = await client.get<ScanDetail>(`/scans/${id}`);
   return data;

@@ -105,6 +105,55 @@ class ScanManager
     }
 
     /**
+     * Lance un scan à partir d’un répertoire déjà présent (ex. contenu d’une archive ZIP).
+     * Même pipeline que startScan mais sans clonage Git.
+     */
+    public function startScanFromWorkdir(Project $project, string $workdir): Scan
+    {
+        $scan = new Scan();
+        $scan->setProject($project)
+            ->setStatus('running')
+            ->setWorkdir($workdir);
+
+        $this->entityManager->persist($scan);
+        $this->entityManager->flush();
+
+        $this->logger->info('startScanFromWorkdir: workdir=' . $workdir . ', exists=' . (is_dir($workdir) ? 'yes' : 'no'));
+
+        try {
+            $dependencyTool = $this->detectDependencyTool($workdir);
+            $this->logger->info('startScanFromWorkdir: dependencyTool=' . ($dependencyTool ?? 'none'));
+
+            $semgrepOutput = $this->runToolSafely('semgrep', fn () => $this->runSemgrep($workdir));
+            $trufflehogOutput = $this->runToolSafely('trufflehog', fn () => $this->runTrufflehog($workdir));
+            $dependencyOutput = $this->runToolSafely('dependency-audit', fn () => $this->runDependencyAudit($workdir, $dependencyTool));
+
+            $this->processSemgrepResults($semgrepOutput, $scan, $workdir);
+            $this->processTrufflehogResults($trufflehogOutput, $scan);
+            $this->processDependencyResults($dependencyOutput, $scan, $dependencyTool);
+
+            $score = $this->computeScore($scan);
+            $scan->setGlobalScore(number_format($score, 2, '.', ''))
+                ->setStatus('completed');
+        } catch (\Throwable $e) {
+            $this->logger->error('Scan from workdir failed: ' . $e->getMessage(), [
+                'exception' => $e,
+                'scanId' => $scan->getId(),
+            ]);
+
+            if (\defined('STDERR')) {
+                fwrite(STDERR, "\n!!! ERREUR DÉTECTÉE : " . $e->getMessage() . "\n");
+            }
+
+            $scan->setStatus('failed');
+        }
+
+        $this->entityManager->flush();
+
+        return $scan;
+    }
+
+    /**
      * Prépare un répertoire de travail isolé (dans /tmp/scans) pour ce scan.
      *
      * L'utilisation d'un dossier unique par scan (UUID) évite les collisions entre exécutions
@@ -130,14 +179,22 @@ class ScanManager
     private function runToolSafely(string $toolName, callable $fn): ?array
     {
         try {
-            return $fn();
+            $result = $fn();
+            $count = 0;
+            if (\is_array($result)) {
+                $count = isset($result['results']) ? \count($result['results']) : \count($result);
+            }
+            $this->logger->info(sprintf('Tool "%s" completed: %s items', $toolName, $count));
+            return $result;
         } catch (\Throwable $e) {
             $this->logger->warning(sprintf(
                 'Tool "%s" failed but scan continues: %s',
                 $toolName,
                 $e->getMessage()
             ));
-
+            if (method_exists($e, 'getProcess') && $e->getProcess() instanceof Process) {
+                $this->logger->debug('Tool process stderr: ' . $e->getProcess()->getErrorOutput());
+            }
             return null;
         }
     }
@@ -235,7 +292,7 @@ class ScanManager
         $process = new Process([
             '/usr/local/bin/trufflehog',
             'filesystem',
-            $workdir,
+            realpath($workdir) ?: $workdir,
             '--json',
             '--no-update',
         ], null, self::PROCESS_ENV);
@@ -316,15 +373,19 @@ class ScanManager
         }
 
         foreach ($data['results'] as $result) {
+            $path = $result['path'] ?? '';
+            // When Semgrep is given an absolute path, result path may be absolute; normalize to relative for storage
+            if ($workdir && $path && str_starts_with($path, $workdir)) {
+                $path = ltrim(substr($path, \strlen($workdir)), '/\\');
+            }
+
             // Semgrep may redact code snippets behind "requires login".
             // Fall back to reading the source file directly when that happens.
             $rawCode = $result['extra']['lines'] ?? null;
             if ($rawCode === 'requires login' || $rawCode === null) {
-                $path = $result['path'] ?? '';
-                // Semgrep paths are relative to cwd — prepend workdir for absolute path
                 $absPath = ($workdir && $path && !str_starts_with($path, '/'))
-                    ? rtrim($workdir, '/') . '/' . $path
-                    : $path;
+                    ? rtrim($workdir, '/') . '/' . str_replace('\\', '/', $path)
+                    : str_replace('\\', '/', $path);
                 $rawCode = $this->readSourceLines(
                     $absPath,
                     $result['start']['line'] ?? null,
@@ -337,7 +398,7 @@ class ScanManager
                 ->setScan($scan)
                 ->setToolSource('semgrep')
                 ->setSeverity($this->normalizeSeverity($result['extra']['severity'] ?? 'medium'))
-                ->setFilePath($result['path'] ?? '')
+                ->setFilePath($path)
                 ->setLineNumber($result['start']['line'] ?? null)
                 ->setDescription($result['extra']['message'] ?? 'Semgrep finding')
                 ->setRawCode($rawCode);

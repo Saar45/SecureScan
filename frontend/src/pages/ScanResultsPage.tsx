@@ -108,13 +108,15 @@ export default function ScanResultsPage() {
           >
             {downloadingReport ? 'Generating...' : 'Download PDF'}
           </button>
-          <button
-            onClick={handleApplyFixes}
-            disabled={applyingFixes || fixResult !== null}
-            className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-500 transition-colors text-sm font-medium disabled:opacity-50"
-          >
-            {applyingFixes ? 'Applying...' : fixResult ? 'Fixes Applied' : 'Apply Fixes & Create PR'}
-          </button>
+          {!scan.project.repositoryUrl.startsWith('upload:') && (
+            <button
+              onClick={handleApplyFixes}
+              disabled={applyingFixes || fixResult !== null}
+              className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-500 transition-colors text-sm font-medium disabled:opacity-50"
+            >
+              {applyingFixes ? 'Applying...' : fixResult ? 'Fixes Applied' : 'Apply Fixes & Create PR'}
+            </button>
+          )}
         </div>
       </div>
 
