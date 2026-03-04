@@ -1,0 +1,7 @@
+# Use SQLite in-memory for tests so they run without MySQL (e.g. when not using Docker).
+doctrine:
+    dbal:
+        url: 'sqlite:///:memory:'
+        # Override main config: no dbname_suffix with in-memory SQLite
+        dbname_suffix: null
+        server_version: 'sqlite'

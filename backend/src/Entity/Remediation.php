@@ -12,7 +12,7 @@ class Remediation
 {
     #[ORM\Id]
     #[ORM\OneToOne(targetEntity: Finding::class, inversedBy: 'remediation')]
-    #[ORM\JoinColumn(name: 'finding_id', referencedColumnName: 'id', nullable: false, onDelete: 'CASCADE')]
+    #[ORM\JoinColumn(name: 'finding_id', referencedColumnName: 'id', onDelete: 'CASCADE')]
     private Finding $finding;
 
     #[ORM\Column(name: 'proposed_fix', type: Types::TEXT, nullable: true)]

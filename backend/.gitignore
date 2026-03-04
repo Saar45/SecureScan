@@ -11,3 +11,10 @@
 Dockerfile
 ###< symfony/framework-bundle ###
 docker/
+###> phpunit/phpunit ###
+.phpunit.cache/
+###< phpunit/phpunit ###
+###> symfony/phpunit-bridge ###
+.phpunit.result.cache
+/phpunit.xml
+###< symfony/phpunit-bridge ###

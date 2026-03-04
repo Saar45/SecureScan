@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<phpunit xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:noNamespaceSchemaLocation="vendor/phpunit/phpunit/phpunit.xsd"
+         bootstrap="tests/bootstrap.php"
+         colors="true"
+         cacheDirectory=".phpunit.cache"
+>
+    <php>
+        <env name="APP_ENV" value="test"/>
+        <env name="KERNEL_CLASS" value="App\Kernel"/>
+        <!-- Force SQLite so tests run without MySQL (overrides .env DATABASE_URL) -->
+        <env name="DATABASE_URL" value="sqlite:///:memory:"/>
+    </php>
+    <testsuites>
+        <testsuite name="Unit">
+            <directory>tests/Unit</directory>
+        </testsuite>
+        <testsuite name="Functional">
+            <directory>tests/Functional</directory>
+        </testsuite>
+    </testsuites>
+    <source>
+        <include>
+            <directory suffix=".php">src</directory>
+        </include>
+        <exclude>
+            <directory>src/Kernel.php</directory>
+        </exclude>
+    </source>
+</phpunit>
