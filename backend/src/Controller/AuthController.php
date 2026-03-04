@@ -6,6 +6,7 @@ use App\Entity\User;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\RedirectResponse;
+use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\Routing\Attribute\Route;
 
@@ -13,18 +14,21 @@ use Symfony\Component\Routing\Attribute\Route;
 class AuthController extends AbstractController
 {
     #[Route('/github', methods: ['GET'])]
-    public function githubRedirect(): RedirectResponse
+    public function githubRedirect(Request $request): RedirectResponse
     {
         $clientId = $_ENV['GITHUB_CLIENT_ID'] ?? '';
-        // Doit être identique à "Authorization callback URL" dans GitHub OAuth App (pas de slash final).
         $redirectUri = !empty($_ENV['GITHUB_CALLBACK_URL']) ? $_ENV['GITHUB_CALLBACK_URL'] : 'http://localhost:3000/api/auth/github/callback';
         $scope = 'repo user:email';
 
+        $state = bin2hex(random_bytes(16));
+        $request->getSession()->set('oauth_state', $state);
+
         $url = sprintf(
-            'https://github.com/login/oauth/authorize?client_id=%s&redirect_uri=%s&scope=%s',
+            'https://github.com/login/oauth/authorize?client_id=%s&redirect_uri=%s&scope=%s&state=%s',
             urlencode($clientId),
             urlencode($redirectUri),
             urlencode($scope),
+            urlencode($state),
         );
 
         return new RedirectResponse($url);

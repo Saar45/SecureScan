@@ -32,6 +32,13 @@ class GitHubAuthenticator extends AbstractAuthenticator
 
     public function authenticate(Request $request): Passport
     {
+        $state = $request->query->get('state', '');
+        $expectedState = $request->getSession()->remove('oauth_state');
+
+        if (!$expectedState || !hash_equals($expectedState, $state)) {
+            throw new AuthenticationException('Invalid OAuth state parameter.');
+        }
+
         $code = $request->query->get('code');
 
         $tokenResponse = $this->httpClient->request('POST', 'https://github.com/login/oauth/access_token', [
