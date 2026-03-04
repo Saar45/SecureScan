@@ -1,0 +1,25 @@
+security:
+    providers:
+        app_user_provider:
+            entity:
+                class: App\Entity\User
+                property: githubId
+
+    firewalls:
+        dev:
+            pattern: ^/(_(profiler|wdt)|css|images|js)/
+            security: false
+
+        main:
+            lazy: true
+            stateless: false
+            provider: app_user_provider
+            custom_authenticators:
+                - App\Security\GitHubAuthenticator
+            logout:
+                path: /api/auth/logout
+                target: /login
+
+    access_control:
+        - { path: ^/api/auth, roles: PUBLIC_ACCESS }
+        - { path: ^/api, roles: ROLE_USER }

@@ -1,11 +1,41 @@
+import { Routes, Route, Navigate } from 'react-router-dom';
+import ProtectedRoute from './components/ProtectedRoute';
+import Layout from './components/Layout';
+import LoginPage from './pages/LoginPage';
+import DashboardPage from './pages/DashboardPage';
+import NewScanPage from './pages/NewScanPage';
+import ScanResultsPage from './pages/ScanResultsPage';
+
 function App() {
   return (
-    <div className="min-h-screen bg-gray-950 flex items-center justify-center">
-      <div className="text-center">
-        <h1 className="text-5xl font-bold text-white mb-4">SecureScan</h1>
-        <p className="text-gray-400 text-lg">On est parti mgl.</p>
-      </div>
-    </div>
+    <Routes>
+      <Route path="/login" element={<LoginPage />} />
+      <Route
+        path="/dashboard"
+        element={
+          <ProtectedRoute>
+            <Layout><DashboardPage /></Layout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/scan/new"
+        element={
+          <ProtectedRoute>
+            <Layout><NewScanPage /></Layout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/scan/:id"
+        element={
+          <ProtectedRoute>
+            <Layout><ScanResultsPage /></Layout>
+          </ProtectedRoute>
+        }
+      />
+      <Route path="*" element={<Navigate to="/dashboard" replace />} />
+    </Routes>
   );
 }
 

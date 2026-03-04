@@ -51,19 +51,24 @@ Pour activer le **push vers le dépôt distant**, configurer `GIT_TOKEN` dans `.
 
 **Fichier :** `backend/src/Service/GitIntegrationService.php`
 
-**Méthode principale :** `applyAndPush(Scan $scan, string $workdir): ?string`
+**Méthode principale :** `applyAndPush(Scan $scan, string $workdir, ?string $userToken = null): array`
+
+Le troisième paramètre `$userToken` permet de passer le token OAuth de l'utilisateur connecté. S'il est absent ou vide, le service se rabat sur la variable d'environnement `GIT_TOKEN` (rétrocompatible avec les commandes CLI).
 
 ### Déroulement
 
 1. **Collecte** toutes les remédiations avec `status = pending` et un `proposedFix` non vide.
-2. **Injection du token** : si `GIT_TOKEN` est défini, injecte le token dans l'URL du remote (`https://x-access-token:{token}@github.com/...`).
-3. **Configure l'identité Git** : `SecureScan Bot <securescan-bot@securescan.local>`.
-4. **Unshallow** le dépôt si nécessaire (le clone `--depth 1` du scan crée un shallow clone).
-5. **Crée la branche** `fix/securescan-YYYY-MM-DD-{shortUuid}`.
-6. **Écrit les fichiers de remédiation** dans `.securescan/` :
+2. **Résolution du token** via `getToken($userToken)` : token OAuth utilisateur → fallback sur `GIT_TOKEN` env.
+3. **Détection des droits d'écriture** via `hasWriteAccess($owner, $repo, $token)` :
+   - Si l'utilisateur a le droit `push` sur le dépôt → push direct.
+   - Sinon → fork automatique du dépôt via `forkRepository()`, puis push vers le fork.
+4. **Configure l'identité Git** : `SecureScan Bot <securescan-bot@securescan.local>`.
+5. **Unshallow** le dépôt si nécessaire (le clone `--depth 1` du scan crée un shallow clone).
+6. **Crée la branche** `fix/securescan-YYYY-MM-DD-{shortUuid}`.
+7. **Écrit les fichiers de remédiation** dans `.securescan/` :
    - Un fichier Markdown par remédiation : `fix-{filename}-{id}.md`
    - Contenu : sévérité, outil source, fichier/ligne, catégorie OWASP, description, code brut, fix proposé.
-7. **Commit** avec un message formaté :
+8. **Commit** avec un message formaté :
    ```
    [SecureScan] Security remediations for scan {shortId}
 
@@ -71,23 +76,31 @@ Pour activer le **push vers le dépôt distant**, configurer `GIT_TOKEN` dans `.
    Scan score: XX/100
    Findings: N
    ```
-8. **Push** vers le remote avec `-u origin {branch}` (ignoré si pas de token).
-9. **Met à jour** chaque remédiation en base : `status = applied`, `gitBranchName = {branch}`.
-10. **Retourne** le nom de la branche, ou `null` si aucune remédiation à appliquer.
+9. **Push** vers le remote avec `-u origin {branch}` (ignoré si pas de token).
+10. **Création de la Pull Request** via l'API GitHub :
+    - Si push direct → PR classique sur le dépôt original.
+    - Si fork → PR cross-repo (`head: forkOwner:branch` vers le dépôt original).
+11. **Met à jour** chaque remédiation en base : `status = applied`, `gitBranchName = {branch}`, `prUrl`.
+12. **Retourne** `['branch' => ..., 'prUrl' => ...]`.
 
 ### Méthodes internes
 
 | Méthode | Rôle |
 |---------|------|
+| `getToken(?string $userToken)` | Résout le token : OAuth utilisateur → fallback `GIT_TOKEN` env |
+| `hasWriteAccess($owner, $repo, $token)` | Vérifie les permissions `push` via l'API GitHub |
+| `forkRepository($owner, $repo, $token)` | Fork le dépôt et attend qu'il soit prêt (polling 30s max) |
+| `parseOwnerRepo($repoUrl)` | Extrait `[owner, repo]` depuis une URL GitHub |
 | `collectPendingRemediations()` | Filtre les remédiations pending avec un proposedFix non vide |
-| `injectTokenInRemoteUrl()` | Réécrit l'URL HTTPS du remote avec le token |
+| `injectTokenInRemoteUrl($workdir, $token)` | Réécrit l'URL HTTPS du remote avec le token |
 | `configureGitIdentity()` | `git config user.name` + `user.email` |
 | `unshallowIfNeeded()` | `git fetch --unshallow` si `.git/shallow` existe |
 | `createBranch()` | `git checkout -b {branch}` |
 | `writeRemediationFiles()` | Crée le dossier `.securescan/` et écrit les fichiers `.md` |
 | `buildRemediationMarkdown()` | Formate un fichier Markdown pour un finding + sa remédiation |
 | `commitChanges()` | `git add -A` + `git commit -m {message}` |
-| `pushBranch()` | `git push -u origin {branch}` |
+| `pushBranch($workdir, $branchName, $token)` | `git push -u origin {branch}` |
+| `createPullRequest($repoUrl, $branchName, $scan, $token, $forkFullName)` | Crée la PR (classique ou cross-repo si fork) |
 
 ---
 
@@ -163,11 +176,17 @@ docker compose exec backend php bin/console app:full-pipeline <repo-url> [projec
 
 ---
 
-## Configuration du `GIT_TOKEN`
+## Authentification Git
 
-La variable `GIT_TOKEN` active le push authentifié vers les dépôts distants. Sans elle, tout fonctionne sauf le push (branche + commit restent locaux dans le conteneur).
+### Via GitHub OAuth (recommandé — interface web)
 
-### Mise en place
+Lorsqu'un utilisateur se connecte via GitHub OAuth sur l'interface web, son token OAuth est automatiquement utilisé pour les opérations Git (push, PR). Aucune configuration manuelle n'est nécessaire.
+
+Voir `docs/feature-oauth.md` pour le détail de l'implémentation OAuth.
+
+### Via `GIT_TOKEN` (fallback — CLI)
+
+La variable `GIT_TOKEN` active le push authentifié pour les commandes CLI. Sans elle, tout fonctionne sauf le push (branche + commit restent locaux dans le conteneur).
 
 1. Créer un **Personal Access Token** GitHub avec le scope `repo` :
    GitHub → Settings → Developer settings → Personal access tokens → Generate new token
@@ -178,6 +197,14 @@ La variable `GIT_TOKEN` active le push authentifié vers les dépôts distants. 
 3. Relancer les conteneurs : `docker compose up --build`
 
 Le token est passé au conteneur backend via `docker-compose.yml` (`GIT_TOKEN=${GIT_TOKEN}`) et lu à l'exécution par `GitIntegrationService` via `$_ENV['GIT_TOKEN']`.
+
+### Logique de fork automatique
+
+Lorsqu'un utilisateur lance "Apply Fixes & Create PR" depuis l'interface web :
+
+1. Le service vérifie si l'utilisateur a le droit `push` sur le dépôt (via `GET /repos/{owner}/{repo}` → `permissions.push`).
+2. **Si oui** (propre dépôt ou collaborateur) : push direct + PR classique.
+3. **Si non** (dépôt tiers) : fork automatique → push vers le fork → PR cross-repo vers le dépôt original.
 
 ---
 

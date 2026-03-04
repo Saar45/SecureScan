@@ -151,17 +151,21 @@ Fichier: `backend/src/Service/ScanManager.php`
    - `package.json` → `npm`,
    - `composer.json` → `composer`,
    - aucun des deux → pas d'audit de dépendances.
-5. **Exécute les scanners**:
+5. **Exécute les scanners** (chaque outil est isolé via `runToolSafely()` — si un outil plante, les autres continuent) :
    - `runSemgrep()`:
-     - lance `python3 /usr/local/bin/semgrep --config p/default --json`,
+     - lance `python3 /usr/local/bin/semgrep --config auto --json`,
+     - accepte les codes de sortie 0 (aucun finding) et 2 (findings trouvés / fichiers ignorés),
      - récupère la sortie JSON.
    - `runTrufflehog()`:
-     - lance `/usr/local/bin/trufflehog filesystem <workdir> --json`,
-     - TruffleHog renvoie un JSON par ligne → recomposition en tableau.
+     - lance `/usr/local/bin/trufflehog filesystem <workdir> --json --no-update`,
+     - `--no-update` empêche la mise à jour automatique (permission denied sous www-data),
+     - tolère un code de sortie non-zero si du JSON a été produit.
    - `runDependencyAudit()`:
      - pour **npm**: `/usr/bin/npm audit --json`
        - gère le cas particulier où le code de sortie `1` signifie "vulnérabilités trouvées" (et non une erreur technique),
-     - pour **composer**: `composer audit --format=json`.
+     - pour **composer**: `/usr/bin/composer audit --format=json --no-interaction`
+       - même logique : code de sortie `1` = vulnérabilités trouvées, pas une erreur.
+   - Toutes les commandes reçoivent un environnement explicite (`HOME=/var/www`, `COMPOSER_HOME`, `npm_config_cache`, etc.) pour fonctionner sous Apache (www-data).
 6. **Transforme les résultats en entités métier**:
    - `processSemgrepResults()`:
      - crée un `Finding` par résultat Semgrep,
@@ -171,7 +175,7 @@ Fichier: `backend/src/Service/ScanManager.php`
    - `processTrufflehogResults()`:
      - crée un `Finding` par secret potentiel,
      - sévérité forcée à `HIGH`,
-     - catégorie OWASP fixée à `A04` (Insecure Design / secrets exposés).
+     - catégorie OWASP fixée à `A04` (Cryptographic Failures / secrets exposés).
    - `processDependencyResults()`:
      - supporte:
        - le **nouveau format** `npm audit` (`vulnerabilities`),
@@ -181,8 +185,8 @@ Fichier: `backend/src/Service/ScanManager.php`
      - mappe chaque advisory vers une catégorie OWASP via `mapToOwaspCategoryFromDependency()`.
 7. **Génère des recommandations automatiques**:
    - `maybeCreateRemediation()`:
-     - pour certains OWASP (`A05`, `A04`), crée une entité `Remediation`,
-     - associe un texte de correction générique mais actionnable (ex: utiliser des requêtes préparées, ne pas stocker de secrets en dur).
+     - crée une entité `Remediation` pour chaque finding, avec un texte adapté à sa catégorie OWASP 2025,
+     - associe un texte de correction générique mais actionnable (ex: requêtes paramétrées pour A05, gestion des secrets pour A04, mise à jour des dépendances pour A03).
 8. **Calcule le score global**:
    - `computeScore()`:
      - part d'un score de base `100`,
@@ -195,10 +199,11 @@ Fichier: `backend/src/Service/ScanManager.php`
      - borne le résultat entre 0 et 100,
      - enregistre ce score au format `xx.xx`.
 9. **Gestion des erreurs**:
-   - entoure la procédure d'un `try { ... } catch (\Throwable $e)`:
-     - écrit un log technique directement sur `STDERR` (message + sortie d'erreur du process s'il existe),
-     - marque le `Scan` en statut `failed`,
-     - laisse malgré tout le `Scan` en base pour faciliter le diagnostic.
+   - Chaque outil est exécuté dans `runToolSafely()` : si un outil plante, l'erreur est loguée et le scan continue avec les résultats des autres outils.
+   - Si le clone Git échoue, le scan entier est marqué `failed`.
+   - Les erreurs sont loguées via le `LoggerInterface` Symfony (fichier `var/log/dev.log`) et aussi sur `STDERR` pour le mode CLI.
+   - Le `Scan` reste en base dans tous les cas pour faciliter le diagnostic.
+   - Semgrep peut retourner "requires login" au lieu du code source réel (restriction du registre). Le service lit alors directement le fichier source sur disque via `readSourceLines()` pour récupérer le snippet de code.
 
 ---
 

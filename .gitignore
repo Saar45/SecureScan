@@ -26,3 +26,5 @@ frontend/.env.local
 
 # Docker
 mysql_data/
+
+.history

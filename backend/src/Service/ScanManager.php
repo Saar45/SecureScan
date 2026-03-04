@@ -7,6 +7,7 @@ use App\Entity\Project;
 use App\Entity\Remediation;
 use App\Entity\Scan;
 use Doctrine\ORM\EntityManagerInterface;
+use Psr\Log\LoggerInterface;
 use Symfony\Component\Process\Exception\ProcessFailedException;
 use Symfony\Component\Process\Process;
 use Symfony\Component\Uid\Uuid;
@@ -22,8 +23,22 @@ use Symfony\Component\Uid\Uuid;
  */
 class ScanManager
 {
+    /**
+     * Environment variables passed to every subprocess.
+     * Ensures tools (semgrep, npm, composer, trufflehog, git) can find their
+     * config/cache directories when running as www-data under Apache.
+     */
+    private const PROCESS_ENV = [
+        'HOME' => '/var/www',
+        'COMPOSER_HOME' => '/var/www/.composer',
+        'npm_config_cache' => '/var/www/.npm',
+        'SEMGREP_SETTINGS_FILE' => '/var/www/.semgrep/settings.yml',
+        'PATH' => '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin',
+    ];
+
     public function __construct(
         private readonly EntityManagerInterface $entityManager,
+        private readonly LoggerInterface $logger,
     ) {
     }
 
@@ -51,11 +66,12 @@ class ScanManager
 
             $dependencyTool = $this->detectDependencyTool($workdir);
 
-            $semgrepOutput = $this->runSemgrep($workdir);
-            $trufflehogOutput = $this->runTrufflehog($workdir);
-            $dependencyOutput = $this->runDependencyAudit($workdir, $dependencyTool);
+            // Run each tool independently — one failure should not abort the others.
+            $semgrepOutput = $this->runToolSafely('semgrep', fn () => $this->runSemgrep($workdir));
+            $trufflehogOutput = $this->runToolSafely('trufflehog', fn () => $this->runTrufflehog($workdir));
+            $dependencyOutput = $this->runToolSafely('dependency-audit', fn () => $this->runDependencyAudit($workdir, $dependencyTool));
 
-            $this->processSemgrepResults($semgrepOutput, $scan);
+            $this->processSemgrepResults($semgrepOutput, $scan, $workdir);
             $this->processTrufflehogResults($trufflehogOutput, $scan);
             $this->processDependencyResults($dependencyOutput, $scan, $dependencyTool);
 
@@ -63,8 +79,11 @@ class ScanManager
             $scan->setGlobalScore(number_format($score, 2, '.', ''))
                 ->setStatus('completed');
         } catch (\Throwable $e) {
-            // Log technique directement dans le terminal (stderr) pour faciliter le debug
-            // lors d'une exécution en CLI / dans un container, indépendamment du logger Symfony.
+            $this->logger->error('Scan failed: ' . $e->getMessage(), [
+                'exception' => $e,
+                'scanId' => $scan->getId(),
+            ]);
+
             if (\defined('STDERR')) {
                 fwrite(STDERR, "\n!!! ERREUR DÉTECTÉE : " . $e->getMessage() . "\n");
 
@@ -75,6 +94,55 @@ class ScanManager
                         fwrite(STDERR, "SORTIE TECHNIQUE : " . $process->getErrorOutput() . "\n");
                     }
                 }
+            }
+
+            $scan->setStatus('failed');
+        }
+
+        $this->entityManager->flush();
+
+        return $scan;
+    }
+
+    /**
+     * Lance un scan à partir d’un répertoire déjà présent (ex. contenu d’une archive ZIP).
+     * Même pipeline que startScan mais sans clonage Git.
+     */
+    public function startScanFromWorkdir(Project $project, string $workdir): Scan
+    {
+        $scan = new Scan();
+        $scan->setProject($project)
+            ->setStatus('running')
+            ->setWorkdir($workdir);
+
+        $this->entityManager->persist($scan);
+        $this->entityManager->flush();
+
+        $this->logger->info('startScanFromWorkdir: workdir=' . $workdir . ', exists=' . (is_dir($workdir) ? 'yes' : 'no'));
+
+        try {
+            $dependencyTool = $this->detectDependencyTool($workdir);
+            $this->logger->info('startScanFromWorkdir: dependencyTool=' . ($dependencyTool ?? 'none'));
+
+            $semgrepOutput = $this->runToolSafely('semgrep', fn () => $this->runSemgrep($workdir));
+            $trufflehogOutput = $this->runToolSafely('trufflehog', fn () => $this->runTrufflehog($workdir));
+            $dependencyOutput = $this->runToolSafely('dependency-audit', fn () => $this->runDependencyAudit($workdir, $dependencyTool));
+
+            $this->processSemgrepResults($semgrepOutput, $scan, $workdir);
+            $this->processTrufflehogResults($trufflehogOutput, $scan);
+            $this->processDependencyResults($dependencyOutput, $scan, $dependencyTool);
+
+            $score = $this->computeScore($scan);
+            $scan->setGlobalScore(number_format($score, 2, '.', ''))
+                ->setStatus('completed');
+        } catch (\Throwable $e) {
+            $this->logger->error('Scan from workdir failed: ' . $e->getMessage(), [
+                'exception' => $e,
+                'scanId' => $scan->getId(),
+            ]);
+
+            if (\defined('STDERR')) {
+                fwrite(STDERR, "\n!!! ERREUR DÉTECTÉE : " . $e->getMessage() . "\n");
             }
 
             $scan->setStatus('failed');
@@ -105,6 +173,33 @@ class ScanManager
     }
 
     /**
+     * Wraps a tool execution so that if it fails, the error is logged
+     * and null is returned instead of aborting the entire scan.
+     */
+    private function runToolSafely(string $toolName, callable $fn): ?array
+    {
+        try {
+            $result = $fn();
+            $count = 0;
+            if (\is_array($result)) {
+                $count = isset($result['results']) ? \count($result['results']) : \count($result);
+            }
+            $this->logger->info(sprintf('Tool "%s" completed: %s items', $toolName, $count));
+            return $result;
+        } catch (\Throwable $e) {
+            $this->logger->warning(sprintf(
+                'Tool "%s" failed but scan continues: %s',
+                $toolName,
+                $e->getMessage()
+            ));
+            if (method_exists($e, 'getProcess') && $e->getProcess() instanceof Process) {
+                $this->logger->debug('Tool process stderr: ' . $e->getProcess()->getErrorOutput());
+            }
+            return null;
+        }
+    }
+
+    /**
      * Clone le dépôt Git du projet dans le répertoire de travail dédié.
      *
      * On laisse Git choisir la branche par défaut du dépôt pour rester générique et réduire
@@ -120,13 +215,24 @@ class ScanManager
             '1',
             $project->getRepositoryUrl(),
             $targetDir,
-        ]);
+        ], null, self::PROCESS_ENV);
         $process->setTimeout(300);
         $process->run();
 
         if (!$process->isSuccessful()) {
             throw new ProcessFailedException($process);
         }
+
+        // Mark directory as safe to avoid "dubious ownership" errors
+        $safeDir = new Process([
+            '/usr/bin/git',
+            'config',
+            '--global',
+            'safe.directory',
+            $targetDir,
+        ], null, self::PROCESS_ENV);
+        $safeDir->setTimeout(10);
+        $safeDir->run();
     }
 
     /**
@@ -158,13 +264,15 @@ class ScanManager
             'python3',
             '/usr/local/bin/semgrep',
             '--config',
-            'p/default',
+            'auto',
             '--json',
-        ], $workdir);
+        ], $workdir, self::PROCESS_ENV);
         $process->setTimeout(600);
         $process->run();
 
-        if (!$process->isSuccessful()) {
+        // Exit code 0 = no findings, 2 = findings found or some files skipped.
+        // Both are valid — semgrep still produces usable JSON output.
+        if (!$process->isSuccessful() && $process->getExitCode() !== 2) {
             throw new ProcessFailedException($process);
         }
 
@@ -184,14 +292,21 @@ class ScanManager
         $process = new Process([
             '/usr/local/bin/trufflehog',
             'filesystem',
-            $workdir,
+            realpath($workdir) ?: $workdir,
             '--json',
-        ]);
+            '--no-update',
+        ], null, self::PROCESS_ENV);
         $process->setTimeout(600);
         $process->run();
 
+        // TruffleHog may exit with non-zero code when secrets are found
+        // but still produces valid JSON output — only fail on serious errors.
         if (!$process->isSuccessful()) {
-            throw new ProcessFailedException($process);
+            $output = $process->getOutput();
+            // If there's JSON output, trufflehog ran but found things — that's fine
+            if (empty(trim($output))) {
+                throw new ProcessFailedException($process);
+            }
         }
 
         $lines = array_filter(explode("\n", $process->getOutput()));
@@ -219,22 +334,22 @@ class ScanManager
         }
 
         if ($tool === 'npm') {
-            $process = new Process(['/usr/bin/npm', 'audit', '--json'], $workdir);
+            $process = new Process(['/usr/bin/npm', 'audit', '--json'], $workdir, self::PROCESS_ENV);
         } else {
-            $process = new Process(['composer', 'audit', '--format=json'], $workdir);
+            $process = new Process(['/usr/bin/composer', 'audit', '--format=json', '--no-interaction'], $workdir, self::PROCESS_ENV);
         }
 
         $process->setTimeout(600);
         $process->run();
 
         if ($tool === 'npm') {
-            // npm audit utilise le code de sortie 1 pour signaler des vulnérabilités trouvées,
-            // ce n'est pas une erreur d'exécution, donc on l'accepte.
+            // npm audit uses exit code 1 to signal "vulnerabilities found" — not a crash.
             if (!$process->isSuccessful() && $process->getExitCode() !== 1) {
                 throw new ProcessFailedException($process);
             }
         } else {
-            if (!$process->isSuccessful()) {
+            // composer audit uses exit code 1 when vulnerabilities are found — not a crash.
+            if (!$process->isSuccessful() && $process->getExitCode() !== 1) {
                 throw new ProcessFailedException($process);
             }
         }
@@ -251,22 +366,42 @@ class ScanManager
      * le mapping vers une catégorie OWASP, afin d'avoir une vue homogène
      * quel que soit le rule-set utilisé.
      */
-    private function processSemgrepResults(?array $data, Scan $scan): void
+    private function processSemgrepResults(?array $data, Scan $scan, string $workdir = ''): void
     {
         if (!is_array($data) || !isset($data['results']) || !is_array($data['results'])) {
             return;
         }
 
         foreach ($data['results'] as $result) {
+            $path = $result['path'] ?? '';
+            // When Semgrep is given an absolute path, result path may be absolute; normalize to relative for storage
+            if ($workdir && $path && str_starts_with($path, $workdir)) {
+                $path = ltrim(substr($path, \strlen($workdir)), '/\\');
+            }
+
+            // Semgrep may redact code snippets behind "requires login".
+            // Fall back to reading the source file directly when that happens.
+            $rawCode = $result['extra']['lines'] ?? null;
+            if ($rawCode === 'requires login' || $rawCode === null) {
+                $absPath = ($workdir && $path && !str_starts_with($path, '/'))
+                    ? rtrim($workdir, '/') . '/' . str_replace('\\', '/', $path)
+                    : str_replace('\\', '/', $path);
+                $rawCode = $this->readSourceLines(
+                    $absPath,
+                    $result['start']['line'] ?? null,
+                    $result['end']['line'] ?? null
+                );
+            }
+
             $finding = new Finding();
             $finding
                 ->setScan($scan)
                 ->setToolSource('semgrep')
                 ->setSeverity($this->normalizeSeverity($result['extra']['severity'] ?? 'medium'))
-                ->setFilePath($result['path'] ?? '')
+                ->setFilePath($path)
                 ->setLineNumber($result['start']['line'] ?? null)
                 ->setDescription($result['extra']['message'] ?? 'Semgrep finding')
-                ->setRawCode($result['extra']['lines'] ?? null);
+                ->setRawCode($rawCode);
 
             $owasp = $this->mapToOwaspCategoryFromSemgrep($result);
             $finding->setOwaspCategory($owasp);
@@ -281,8 +416,8 @@ class ScanManager
     /**
      * Transforme les résultats TruffleHog (détection de secrets) en `Finding`.
      *
-     * Tous ces findings sont considérés comme haute sévérité et mappés sur OWASP A04,
-     * ce qui permet de générer des recommandations ciblées.
+     * Tous ces findings sont considérés comme haute sévérité et mappés sur OWASP A04
+     * (Cryptographic Failures — secrets exposés), ce qui permet de générer des recommandations ciblées.
      */
     private function processTrufflehogResults(?array $results, Scan $scan): void
     {
@@ -422,6 +557,31 @@ class ScanManager
     }
 
     /**
+     * Reads source code lines from a file on disk.
+     * Used as fallback when semgrep redacts the code snippet ("requires login").
+     */
+    private function readSourceLines(string $filePath, ?int $startLine, ?int $endLine): ?string
+    {
+        if (!$filePath || !$startLine || !is_file($filePath)) {
+            return null;
+        }
+
+        $lines = @file($filePath);
+        if ($lines === false) {
+            return null;
+        }
+
+        $end = $endLine ?? $startLine;
+        // Add 2 lines of context before and after
+        $from = max(0, $startLine - 3);
+        $to = min(count($lines) - 1, $end + 1);
+
+        $snippet = array_slice($lines, $from, $to - $from + 1);
+
+        return rtrim(implode('', $snippet));
+    }
+
+    /**
      * Normalise la sévérité en un niveau unique (CRITICAL/HIGH/MEDIUM/LOW/INFO).
      *
      * Permet de consolider des sources hétérogènes (Semgrep, npm, composer, TruffleHog)
@@ -447,24 +607,61 @@ class ScanManager
         $message = strtolower((string) ($result['extra']['message'] ?? ''));
         $ruleId = strtolower((string) ($result['check_id'] ?? ''));
 
-        if (str_contains($message, 'sql injection') || str_contains($ruleId, 'sql_injection')) {
+        // A05 — Injection (SQL, XSS, command injection, path traversal, eval, LDAP, etc.)
+        if (str_contains($message, 'sql injection') || str_contains($ruleId, 'sql_injection')
+            || str_contains($message, 'xss') || str_contains($ruleId, 'xss')
+            || str_contains($message, 'cross-site scripting')
+            || str_contains($message, 'command injection') || str_contains($ruleId, 'command_injection')
+            || str_contains($message, 'path traversal') || str_contains($ruleId, 'path_traversal')
+            || str_contains($message, 'eval(') || str_contains($ruleId, 'eval')
+            || str_contains($message, 'ldap injection') || str_contains($ruleId, 'ldap')) {
             return 'A05';
         }
 
-        if (str_contains($message, 'xss') || str_contains($ruleId, 'xss')) {
-            return 'A03';
-        }
-
-        if (str_contains($message, 'path traversal') || str_contains($ruleId, 'path_traversal')) {
-            return 'A05';
-        }
-
-        if (str_contains($message, 'authentication') || str_contains($ruleId, 'auth')) {
+        // A01 — Broken Access Control
+        if (str_contains($message, 'authorization') || str_contains($ruleId, 'access_control')
+            || str_contains($message, 'access control') || str_contains($ruleId, 'idor')
+            || str_contains($message, 'privilege') || str_contains($ruleId, 'privilege')) {
             return 'A01';
         }
 
-        if (str_contains($message, 'authorization') || str_contains($ruleId, 'access_control')) {
+        // A02 — Security Misconfiguration
+        if (str_contains($message, 'misconfiguration') || str_contains($ruleId, 'misconfig')
+            || str_contains($message, 'cors') || str_contains($ruleId, 'cors')
+            || str_contains($message, 'debug') || str_contains($ruleId, 'debug')
+            || str_contains($message, 'default password') || str_contains($ruleId, 'default_password')
+            || str_contains($message, 'hardcoded') || str_contains($ruleId, 'hardcoded')) {
             return 'A02';
+        }
+
+        // A04 — Cryptographic Failures
+        if (str_contains($message, 'crypto') || str_contains($ruleId, 'crypto')
+            || str_contains($message, 'weak hash') || str_contains($ruleId, 'weak_hash')
+            || str_contains($message, 'md5') || str_contains($message, 'sha1')
+            || str_contains($message, 'insecure random') || str_contains($ruleId, 'random')
+            || str_contains($message, 'tls') || str_contains($message, 'ssl')
+            || str_contains($message, 'cleartext') || str_contains($ruleId, 'cleartext')) {
+            return 'A04';
+        }
+
+        // A07 — Authentication Failures
+        if (str_contains($message, 'authentication') || str_contains($ruleId, 'auth')
+            || str_contains($message, 'session') || str_contains($ruleId, 'session')
+            || str_contains($message, 'password') || str_contains($ruleId, 'password')
+            || str_contains($message, 'brute force') || str_contains($ruleId, 'brute_force')) {
+            return 'A07';
+        }
+
+        // A06 — Insecure Design
+        if (str_contains($message, 'insecure design') || str_contains($ruleId, 'insecure_design')
+            || str_contains($message, 'race condition') || str_contains($ruleId, 'race_condition')) {
+            return 'A06';
+        }
+
+        // A08 — Software and Data Integrity Failures
+        if (str_contains($message, 'deserialization') || str_contains($ruleId, 'deserialization')
+            || str_contains($message, 'integrity') || str_contains($ruleId, 'integrity')) {
+            return 'A08';
         }
 
         return null;
@@ -481,23 +678,31 @@ class ScanManager
         $title = strtolower((string) ($advisory['title'] ?? ''));
         $description = strtolower((string) ($advisory['description'] ?? ''));
 
-        if (str_contains($title, 'injection') || str_contains($description, 'injection')) {
+        // A05 — Injection (SQL, XSS, command injection in dependencies)
+        if (str_contains($title, 'injection') || str_contains($description, 'injection')
+            || str_contains($title, 'xss') || str_contains($description, 'cross-site scripting')) {
             return 'A05';
         }
 
-        if (str_contains($title, 'xss') || str_contains($description, 'cross-site scripting')) {
-            return 'A03';
+        // A07 — Authentication Failures
+        if (str_contains($title, 'authentication') || str_contains($description, 'authentication')) {
+            return 'A07';
         }
 
-        if (str_contains($title, 'authentication') || str_contains($description, 'authentication')) {
+        // A01 — Broken Access Control
+        if (str_contains($title, 'authorization') || str_contains($description, 'authorization')
+            || str_contains($title, 'access control') || str_contains($description, 'access control')) {
             return 'A01';
         }
 
-        if (str_contains($title, 'authorization') || str_contains($description, 'authorization')) {
-            return 'A02';
+        // A04 — Cryptographic Failures
+        if (str_contains($title, 'crypto') || str_contains($description, 'crypto')
+            || str_contains($title, 'ssl') || str_contains($description, 'tls')) {
+            return 'A04';
         }
 
-        return null;
+        // Default for dependency vulnerabilities → A03 (Software Supply Chain Failures)
+        return 'A03';
     }
 
     /**
@@ -524,16 +729,16 @@ class ScanManager
         $owasp = $finding->getOwaspCategory();
 
         return match ($owasp) {
-            'A01' => 'Renforcez les contrôles d\'accès : vérifiez l\'authentification et l\'autorisation côté serveur pour chaque requête. Appliquez le principe du moindre privilège.',
-            'A02' => 'Corrigez les failles cryptographiques : utilisez des algorithmes modernes (bcrypt, Argon2 pour les mots de passe), activez TLS partout et ne stockez pas de données sensibles inutilement.',
-            'A03' => 'Protégez-vous contre les injections (XSS, SQL, etc.) : échappez systématiquement les sorties, utilisez des requêtes paramétrées et validez toutes les entrées côté serveur.',
-            'A04' => 'Ne stockez jamais de secrets dans le code ou le dépôt. Utilisez des variables d\'environnement, un gestionnaire de secrets (Vault, AWS Secrets Manager, etc.) et limitez la portée des clés.',
-            'A05' => 'Protégez-vous contre les injections en utilisant des requêtes paramétrées, une validation stricte des entrées et en évitant la concaténation de chaînes dans les requêtes.',
-            'A06' => 'Mettez à jour les composants vulnérables et obsolètes. Automatisez la veille des dépendances (Dependabot, Renovate) et supprimez les bibliothèques inutilisées.',
-            'A07' => 'Corrigez les failles d\'authentification : implémentez la limitation de tentatives, utilisez l\'authentification multi-facteurs et ne divulguez pas d\'informations sur les comptes existants.',
-            'A08' => 'Vérifiez l\'intégrité des logiciels et des données : signez les artefacts, validez les mises à jour et sécurisez les pipelines CI/CD.',
-            'A09' => 'Améliorez la journalisation et la surveillance : enregistrez les événements de sécurité, centralisez les logs et mettez en place des alertes en temps réel.',
-            'A10' => 'Protégez-vous contre les falsifications de requêtes côté serveur (SSRF) : validez et filtrez les URL, bloquez les plages d\'adresses internes et utilisez des listes d\'autorisation.',
+            'A01' => 'Renforcez les contrôles d\'accès : vérifiez l\'autorisation côté serveur pour chaque requête. Appliquez le principe du moindre privilège et refusez par défaut.',
+            'A02' => 'Corrigez les erreurs de configuration : désactivez les fonctionnalités inutiles, changez les mots de passe par défaut, restreignez les en-têtes CORS et appliquez un durcissement systématique.',
+            'A03' => 'Sécurisez la chaîne d\'approvisionnement logicielle : mettez à jour les dépendances vulnérables, automatisez la veille (Dependabot, Renovate), vérifiez l\'intégrité des paquets et supprimez les bibliothèques inutilisées.',
+            'A04' => 'Corrigez les failles cryptographiques : utilisez des algorithmes modernes (bcrypt, Argon2), activez TLS partout, ne stockez jamais de secrets dans le code et utilisez un gestionnaire de secrets (Vault, AWS Secrets Manager).',
+            'A05' => 'Protégez-vous contre les injections (SQL, XSS, commandes OS, etc.) : utilisez des requêtes paramétrées, échappez systématiquement les sorties, validez toutes les entrées côté serveur et évitez eval().',
+            'A06' => 'Améliorez la conception sécurisée : modélisez les menaces dès la conception, appliquez les design patterns sécurisés et séparez les couches métier des couches de présentation.',
+            'A07' => 'Corrigez les failles d\'authentification : implémentez la limitation de tentatives, utilisez l\'authentification multi-facteurs, sécurisez les sessions et ne divulguez pas d\'informations sur les comptes existants.',
+            'A08' => 'Vérifiez l\'intégrité des logiciels et des données : signez les artefacts, validez les mises à jour, sécurisez les pipelines CI/CD et protégez-vous contre la désérialisation non sécurisée.',
+            'A09' => 'Améliorez la journalisation et les alertes : enregistrez les événements de sécurité, centralisez les logs, mettez en place des alertes en temps réel et testez régulièrement votre capacité de détection.',
+            'A10' => 'Gérez correctement les conditions exceptionnelles : ne divulguez jamais de stack traces en production, validez toutes les entrées aux limites, gérez explicitement les erreurs et testez les cas limites.',
             default => sprintf(
                 'Vulnérabilité détectée (%s, sévérité %s). Examinez le code concerné dans %s et appliquez les bonnes pratiques de sécurité OWASP.',
                 $finding->getToolSource(),

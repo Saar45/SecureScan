@@ -1,6 +1,7 @@
+# 1. Utilisation de l'image Apache avec PHP 8.4 pour la compatibilité Doctrine
 FROM php:8.4-apache
 
-# Install system dependencies
+# Installation des dépendances système
 RUN apt-get update && apt-get install -y \
     git \
     unzip \
@@ -17,9 +18,10 @@ RUN apt-get update && apt-get install -y \
     pipx \
     npm \
     curl \
+    netcat-openbsd \
     && rm -rf /var/lib/apt/lists/*
 
-# Install PHP extensions
+# Installation des extensions PHP indispensables pour Symfony
 RUN docker-php-ext-configure gd --with-freetype --with-jpeg \
     && docker-php-ext-install \
     pdo_mysql \
@@ -30,39 +32,39 @@ RUN docker-php-ext-configure gd --with-freetype --with-jpeg \
     xml \
     opcache
 
-# Install Composer
+# Installation de Composer
 COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
 
-# 1. Installation de semgrep (il se mettra tout seul dans /usr/local/bin)
+# Installation des outils de sécurité
 RUN pip3 install semgrep --break-system-packages
-
-# 2. On s'assure simplement que le fichier est exécutable par tous
-RUN chmod +x /usr/local/bin/semgrep
-
-# 3. Installation de TruffleHog au même endroit
 RUN curl -sSfL https://raw.githubusercontent.com/trufflesecurity/trufflehog/main/scripts/install.sh | sh -s -- -b /usr/local/bin
 
-# Enable Apache modules
+# Configuration d'Apache
 RUN a2enmod rewrite headers
 
-# Copy Apache vhost config
+# Copie des configurations
 COPY docker/apache/vhost.conf /etc/apache2/sites-available/000-default.conf
-
-# Copy PHP config
 COPY docker/php/php.ini /usr/local/etc/php/conf.d/custom.ini
 
-# Copy entrypoint script (auto composer install on boot)
+# --- SECTION CRITIQUE : REPARATION DE L'ENTRYPOINT ---
 COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh
-RUN chmod +x /usr/local/bin/entrypoint.sh
 
-# Set working directory
+# Cette commande supprime les fins de ligne Windows (\r) pour éviter l'erreur "no such file or directory"
+RUN sed -i 's/\r$//' /usr/local/bin/entrypoint.sh
+
+# On rend le script exécutable
+RUN chmod +x /usr/local/bin/entrypoint.sh
+# -----------------------------------------------------
+
+# Dossier de travail
 WORKDIR /var/www/html
 
-# Set proper permissions and create runtime directories
-RUN chown -R www-data:www-data /var/www/html && \
+# Gestion des permissions pour l'utilisateur Apache (www-data)
+RUN chown -R www-data:www-data /var/www && \
     mkdir -p /tmp/scans && chmod 777 /tmp/scans && \
     mkdir -p /tmp/reports && chmod 777 /tmp/reports
 
 EXPOSE 80
 
+# Lancement du script de démarrage
 ENTRYPOINT ["entrypoint.sh"]
