@@ -50,6 +50,10 @@ class ProjectController extends AbstractController
             return $this->json(['error' => 'name and repositoryUrl are required'], 400);
         }
 
+        if (!preg_match('#^https://#i', $repoUrl)) {
+            return $this->json(['error' => 'Only https:// repository URLs are allowed'], 400);
+        }
+
         $project = new Project();
         $project->setName($name);
         $project->setRepositoryUrl($repoUrl);
