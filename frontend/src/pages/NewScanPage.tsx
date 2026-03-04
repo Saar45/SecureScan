@@ -39,7 +39,7 @@ export default function NewScanPage() {
       const result = await uploadScanArchive(zipFile);
       navigate(`/scan/${result.id}`);
     } catch (err: any) {
-      setError(err.response?.data?.error || 'Failed to upload and scan. Please try again.');
+      setError(err.response?.data?.error || 'Échec du chargement et de l \'analyse. Veuillez réessayer.');
       setScanning(false);
     }
   };
