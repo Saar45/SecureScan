@@ -9,6 +9,7 @@ use App\Repository\ScanRepository;
 use App\Service\GitIntegrationService;
 use App\Service\ReportGenerator;
 use App\Service\ScanManager;
+use App\Service\TokenEncryptor;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
@@ -28,6 +29,7 @@ class ScanController extends AbstractController
         private readonly GitIntegrationService $gitIntegrationService,
         private readonly ReportGenerator $reportGenerator,
         private readonly EntityManagerInterface $entityManager,
+        private readonly TokenEncryptor $tokenEncryptor,
     ) {
     }
 
@@ -268,7 +270,7 @@ class ScanController extends AbstractController
         }
 
         $user = $this->getUser();
-        $token = $user instanceof User ? $user->getGithubToken() : null;
+        $token = $user instanceof User ? $this->tokenEncryptor->decrypt($user->getGithubToken()) : null;
 
         $result = $this->gitIntegrationService->applyAndPush($scan, $workdir, $token);
 
