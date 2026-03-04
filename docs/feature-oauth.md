@@ -19,7 +19,7 @@ Authentification des utilisateurs via GitHub OAuth. Chaque utilisateur se connec
 ```
 .env.example                                    # GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET
 docker-compose.yml                              # Passe les vars OAuth au backend
-mysql/init/01-schema.sql                        # Table users
+backend/migrations/                              # Migrations Doctrine (schéma BDD)
 backend/
   composer.json                                 # symfony/security-bundle
   config/
@@ -158,6 +158,25 @@ Hérite de `AbstractAuthenticator`.
   "githubId": 81822359
 }
 ```
+
+**`GET /api/auth/github/repos`** — Liste les dépôts GitHub de l'utilisateur connecté (30 derniers, triés par activité récente).
+
+```json
+[
+  {
+    "id": 123456789,
+    "name": "my-repo",
+    "fullName": "user/my-repo",
+    "cloneUrl": "https://github.com/user/my-repo.git",
+    "description": "Description du dépôt",
+    "language": "TypeScript",
+    "private": false,
+    "pushedAt": "2026-03-04T10:00:00Z"
+  }
+]
+```
+
+Retourne 401 si non authentifié, 502 si l'API GitHub échoue.
 
 **`POST /api/auth/logout`** — Invalidation de session (géré par Symfony security).
 
@@ -393,3 +412,13 @@ docker compose down -v && docker compose up -d --build
 #    → PR créée sur GitHub avec votre token OAuth
 #    → Lien vers la PR affiché
 ```
+
+---
+
+## Clone authentifié
+
+Le `ScanManager` injecte automatiquement le token GitHub de l'utilisateur dans l'URL de clone pour les dépôts `github.com`. Cela permet de cloner les dépôts privés sans configuration supplémentaire.
+
+Format de l'URL injectée : `https://x-access-token:{token}@github.com/user/repo.git`
+
+Le token est déchiffré via `TokenEncryptor` avant injection et n'est jamais persisté en clair dans les logs (l'URL avec token n'apparaît que dans le processus git en mémoire).

@@ -26,6 +26,10 @@ class Project
     #[ORM\Column(name: 'main_branch', type: 'string', length: 100)]
     private string $mainBranch = 'main';
 
+    #[ORM\ManyToOne(targetEntity: User::class)]
+    #[ORM\JoinColumn(name: 'user_id', nullable: true)]
+    private ?User $owner = null;
+
     #[ORM\Column(name: 'created_at', type: Types::DATETIME_MUTABLE)]
     private \DateTimeInterface $createdAt;
 
@@ -81,6 +85,17 @@ class Project
     public function getCreatedAt(): \DateTimeInterface
     {
         return $this->createdAt;
+    }
+
+    public function getOwner(): ?User
+    {
+        return $this->owner;
+    }
+
+    public function setOwner(?User $owner): static
+    {
+        $this->owner = $owner;
+        return $this;
     }
 
     /** @return Collection<int, Scan> */

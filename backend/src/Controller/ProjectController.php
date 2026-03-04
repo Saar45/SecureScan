@@ -22,7 +22,10 @@ class ProjectController extends AbstractController
     #[Route('', methods: ['GET'])]
     public function list(): JsonResponse
     {
-        $projects = $this->projectRepository->findBy([], ['createdAt' => 'DESC']);
+        $projects = $this->projectRepository->findBy(
+            ['owner' => $this->getUser()],
+            ['createdAt' => 'DESC'],
+        );
 
         $data = array_map(fn (Project $p) => [
             'id' => $p->getId(),
@@ -47,9 +50,14 @@ class ProjectController extends AbstractController
             return $this->json(['error' => 'name and repositoryUrl are required'], 400);
         }
 
+        if (!preg_match('#^https://#i', $repoUrl)) {
+            return $this->json(['error' => 'Only https:// repository URLs are allowed'], 400);
+        }
+
         $project = new Project();
         $project->setName($name);
         $project->setRepositoryUrl($repoUrl);
+        $project->setOwner($this->getUser());
 
         if (isset($payload['mainBranch'])) {
             $project->setMainBranch($payload['mainBranch']);
@@ -76,6 +84,8 @@ class ProjectController extends AbstractController
             return $this->json(['error' => 'Project not found'], 404);
         }
 
+        $this->checkOwnership($project);
+
         $scans = [];
         foreach ($project->getScans() as $scan) {
             $scans[] = [
@@ -95,5 +105,12 @@ class ProjectController extends AbstractController
             'createdAt' => $project->getCreatedAt()->format('c'),
             'scans' => $scans,
         ]);
+    }
+
+    private function checkOwnership(Project $project): void
+    {
+        if ($project->getOwner() !== $this->getUser()) {
+            throw $this->createAccessDeniedException();
+        }
     }
 }

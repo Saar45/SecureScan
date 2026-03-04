@@ -4,6 +4,7 @@ namespace App\Security;
 
 use App\Entity\User;
 use App\Repository\UserRepository;
+use App\Service\TokenEncryptor;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Component\HttpFoundation\RedirectResponse;
 use Symfony\Component\HttpFoundation\Request;
@@ -22,6 +23,7 @@ class GitHubAuthenticator extends AbstractAuthenticator
         private readonly HttpClientInterface $httpClient,
         private readonly UserRepository $userRepository,
         private readonly EntityManagerInterface $entityManager,
+        private readonly TokenEncryptor $tokenEncryptor,
     ) {
     }
 
@@ -32,6 +34,13 @@ class GitHubAuthenticator extends AbstractAuthenticator
 
     public function authenticate(Request $request): Passport
     {
+        $state = $request->query->get('state', '');
+        $expectedState = $request->getSession()->remove('oauth_state');
+
+        if (!$expectedState || !hash_equals($expectedState, $state)) {
+            throw new AuthenticationException('Invalid OAuth state parameter.');
+        }
+
         $code = $request->query->get('code');
 
         $tokenResponse = $this->httpClient->request('POST', 'https://github.com/login/oauth/access_token', [
@@ -74,7 +83,7 @@ class GitHubAuthenticator extends AbstractAuthenticator
 
         $user->setUsername($profile['login'] ?? 'unknown');
         $user->setAvatarUrl($profile['avatar_url'] ?? null);
-        $user->setGithubToken($accessToken);
+        $user->setGithubToken($this->tokenEncryptor->encrypt($accessToken));
         $this->entityManager->flush();
 
         return new SelfValidatingPassport(

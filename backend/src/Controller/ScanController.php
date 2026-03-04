@@ -3,11 +3,13 @@
 namespace App\Controller;
 
 use App\Entity\Project;
+use App\Entity\Scan;
 use App\Entity\User;
 use App\Repository\ScanRepository;
 use App\Service\GitIntegrationService;
 use App\Service\ReportGenerator;
 use App\Service\ScanManager;
+use App\Service\TokenEncryptor;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
@@ -27,6 +29,7 @@ class ScanController extends AbstractController
         private readonly GitIntegrationService $gitIntegrationService,
         private readonly ReportGenerator $reportGenerator,
         private readonly EntityManagerInterface $entityManager,
+        private readonly TokenEncryptor $tokenEncryptor,
     ) {
     }
 
@@ -41,27 +44,36 @@ class ScanController extends AbstractController
             return $this->json(['error' => 'repositoryUrl or projectId is required'], 400);
         }
 
+        if ($repoUrl && !preg_match('#^https://#i', $repoUrl)) {
+            return $this->json(['error' => 'Only https:// repository URLs are allowed'], 400);
+        }
+
         if ($projectId) {
             $project = $this->entityManager->getRepository(Project::class)->find($projectId);
             if (!$project) {
                 return $this->json(['error' => 'Project not found'], 404);
             }
+            $this->checkProjectOwnership($project);
         } else {
-            // Find or create project from URL
+            // Find or create project from URL — scoped to current user
             $project = $this->entityManager->getRepository(Project::class)
-                ->findOneBy(['repositoryUrl' => $repoUrl]);
+                ->findOneBy(['repositoryUrl' => $repoUrl, 'owner' => $this->getUser()]);
 
             if (!$project) {
                 $name = $this->extractProjectName($repoUrl);
                 $project = new Project();
                 $project->setName($name);
                 $project->setRepositoryUrl($repoUrl);
+                $project->setOwner($this->getUser());
                 $this->entityManager->persist($project);
                 $this->entityManager->flush();
             }
         }
 
-        $scan = $this->scanManager->startScan($project);
+        $user = $this->getUser();
+        $token = $user instanceof User ? $this->tokenEncryptor->decrypt($user->getGithubToken()) : null;
+
+        $scan = $this->scanManager->startScan($project, $token);
 
         return $this->json([
             'id' => $scan->getId(),
@@ -133,6 +145,7 @@ class ScanController extends AbstractController
         $project = new Project();
         $project->setName('Upload: ' . $originalName);
         $project->setRepositoryUrl('upload:' . $originalName);
+        $project->setOwner($this->getUser());
         $this->entityManager->persist($project);
         $this->entityManager->flush();
 
@@ -156,6 +169,8 @@ class ScanController extends AbstractController
         if (!$scan) {
             return $this->json(['error' => 'Scan not found'], 404);
         }
+
+        $this->checkScanOwnership($scan);
 
         $findings = [];
         foreach ($scan->getFindings() as $finding) {
@@ -200,6 +215,8 @@ class ScanController extends AbstractController
         if (!$scan) {
             return $this->json(['error' => 'Scan not found'], 404);
         }
+
+        $this->checkScanOwnership($scan);
 
         $severity = $request->query->get('severity');
         $tool = $request->query->get('tool');
@@ -248,6 +265,8 @@ class ScanController extends AbstractController
             return $this->json(['error' => 'Scan not found'], 404);
         }
 
+        $this->checkScanOwnership($scan);
+
         $workdir = $scan->getWorkdir();
         if (!$workdir || !is_dir($workdir)) {
             return $this->json(['error' => 'Scan workdir not available'], 400);
@@ -258,7 +277,7 @@ class ScanController extends AbstractController
         }
 
         $user = $this->getUser();
-        $token = $user instanceof User ? $user->getGithubToken() : null;
+        $token = $user instanceof User ? $this->tokenEncryptor->decrypt($user->getGithubToken()) : null;
 
         $result = $this->gitIntegrationService->applyAndPush($scan, $workdir, $token);
 
@@ -277,6 +296,8 @@ class ScanController extends AbstractController
             return $this->json(['error' => 'Scan not found'], 404);
         }
 
+        $this->checkScanOwnership($scan);
+
         $outputDir = '/var/www/html/public/reports';
         if (!is_dir($outputDir)) {
             @mkdir($outputDir, 0777, true);
@@ -294,7 +315,17 @@ class ScanController extends AbstractController
     #[Route('/recent', methods: ['GET'], priority: 10)]
     public function recent(): JsonResponse
     {
-        $scans = $this->scanRepository->findBy([], ['executedAt' => 'DESC'], 10);
+        $user = $this->getUser();
+
+        $scans = $this->entityManager->getRepository(Scan::class)
+            ->createQueryBuilder('s')
+            ->join('s.project', 'p')
+            ->where('p.owner = :user')
+            ->setParameter('user', $user)
+            ->orderBy('s.executedAt', 'DESC')
+            ->setMaxResults(10)
+            ->getQuery()
+            ->getResult();
 
         $data = array_map(fn ($scan) => [
             'id' => $scan->getId(),
@@ -310,6 +341,20 @@ class ScanController extends AbstractController
         ], $scans);
 
         return $this->json($data);
+    }
+
+    private function checkProjectOwnership(Project $project): void
+    {
+        if ($project->getOwner() !== $this->getUser()) {
+            throw $this->createAccessDeniedException();
+        }
+    }
+
+    private function checkScanOwnership(Scan $scan): void
+    {
+        if ($scan->getProject()->getOwner() !== $this->getUser()) {
+            throw $this->createAccessDeniedException();
+        }
     }
 
     private function extractProjectName(string $repoUrl): string
