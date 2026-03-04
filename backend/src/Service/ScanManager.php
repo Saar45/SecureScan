@@ -49,7 +49,7 @@ class ScanManager
      * exécution des scanners, calcul du score). En cas d'erreur technique, le statut du scan passe
      * à `failed` mais l'entité reste persistée pour permettre un diagnostic a posteriori.
      */
-    public function startScan(Project $project): Scan
+    public function startScan(Project $project, ?string $githubToken = null): Scan
     {
         $scan = new Scan();
         $scan->setProject($project)
@@ -62,7 +62,7 @@ class ScanManager
         $scan->setWorkdir($workdir);
 
         try {
-            $this->cloneRepository($project, $workdir);
+            $this->cloneRepository($project, $workdir, $githubToken);
 
             $dependencyTool = $this->detectDependencyTool($workdir);
 
@@ -205,15 +205,22 @@ class ScanManager
      * On laisse Git choisir la branche par défaut du dépôt pour rester générique et réduire
      * le temps de clone avec `--depth 1`.
      */
-    private function cloneRepository(Project $project, string $targetDir): void
+    private function cloneRepository(Project $project, string $targetDir, ?string $githubToken = null): void
     {
+        $repoUrl = $project->getRepositoryUrl();
+
+        // Inject token into HTTPS URL for authenticated cloning (private repos, Docker without TTY)
+        if ($githubToken && preg_match('#^https://github\.com/#i', $repoUrl)) {
+            $repoUrl = preg_replace('#^https://#i', 'https://x-access-token:' . $githubToken . '@', $repoUrl);
+        }
+
         // On enlève --branch pour laisser Git choisir la branche par défaut du dépôt
         $process = new Process([
             '/usr/bin/git',
             'clone',
             '--depth',
             '1',
-            $project->getRepositoryUrl(),
+            $repoUrl,
             $targetDir,
         ], null, self::PROCESS_ENV);
         $process->setTimeout(300);

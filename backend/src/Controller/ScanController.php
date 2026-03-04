@@ -70,7 +70,10 @@ class ScanController extends AbstractController
             }
         }
 
-        $scan = $this->scanManager->startScan($project);
+        $user = $this->getUser();
+        $token = $user instanceof User ? $this->tokenEncryptor->decrypt($user->getGithubToken()) : null;
+
+        $scan = $this->scanManager->startScan($project, $token);
 
         return $this->json([
             'id' => $scan->getId(),

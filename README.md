@@ -35,7 +35,7 @@ docker compose up --build
 
 C'est tout. Pas de `composer install`, pas de migration, pas de seed manuel.
 
-- Le schéma SQL et les données OWASP sont chargés automatiquement au premier démarrage de MySQL (`mysql/init/`).
+- Les migrations Doctrine s'exécutent automatiquement au démarrage du conteneur backend (`backend/docker/entrypoint.sh`).
 - Les dépendances PHP (dont DomPDF) sont installées automatiquement par le script d'entrypoint du backend.
 - Le frontend installe ses dépendances npm au build de l'image.
 
@@ -59,7 +59,10 @@ Fichier `.env.example` à copier en `.env` :
 | `APP_ENV`              | Environnement Symfony                              | `dev`                          |
 | `APP_SECRET`           | Secret Symfony                                     | `change_me_to_a_random_secret` |
 | `CORS_ALLOW_ORIGIN`    | Origine CORS autorisée                             | `http://localhost:3000`        |
-| `GIT_TOKEN`            | GitHub PAT pour push authentifié (scope `repo`)    | *(vide)*                       |
+| `GITHUB_CLIENT_ID`     | Client ID de l'OAuth App GitHub                    | *(requis)*                     |
+| `GITHUB_CLIENT_SECRET` | Client Secret de l'OAuth App GitHub                | *(requis)*                     |
+| `GIT_TOKEN`            | GitHub PAT fallback pour push (scope `repo`)       | *(vide)*                       |
+| `GROQ_API_KEY`         | Clé API Groq pour la génération de fixes IA        | *(vide)*                       |
 | `VITE_API_URL`         | URL de l'API pour le frontend                      | `http://localhost:8080`        |
 
 ---
@@ -67,10 +70,10 @@ Fichier `.env.example` à copier en `.env` :
 ### Modèle de données
 
 ```
-Project (1) ──→ (N) Scan (1) ──→ (N) Finding (1) ──→ (1) Remediation
+User (1) ──→ (N) Project (1) ──→ (N) Scan (1) ──→ (N) Finding (1) ──→ (1) Remediation
 ```
 
-Tous les identifiants sont des UUID. La table `owasp_categories` est pré-remplie (A01–A10).
+Tous les identifiants sont des UUID. La table `owasp_categories` est pré-remplie (A01–A10). Chaque projet est rattaché à l'utilisateur qui l'a créé (ownership).
 
 ---
 
@@ -95,6 +98,7 @@ docker compose exec backend php bin/console app:full-pipeline <repo-url> [projec
 |---------|---------------|
 | Pipeline de scan (Semgrep, TruffleHog, audits) | [docs/feature-scan-pipeline.md](docs/feature-scan-pipeline.md) |
 | Intégration Git automatisée + rapport PDF | [docs/feature-git-integration.md](docs/feature-git-integration.md) |
+| Authentification GitHub OAuth | [docs/feature-oauth.md](docs/feature-oauth.md) |
 
 ---
 
