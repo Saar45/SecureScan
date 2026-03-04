@@ -18,6 +18,13 @@ const STATUS_STYLES: Record<string, string> = {
   failed: 'bg-red-500/10 text-red-400',
 };
 
+const STATUS_LABELS: Record<string, string> = {
+  completed: 'Terminé',
+  running: 'En cours',
+  pending: 'En attente',
+  failed: 'Échoué',
+};
+
 export default function DashboardPage() {
   const [scans, setScans] = useState<ScanSummary[]>([]);
   const [loading, setLoading] = useState(true);
@@ -42,10 +49,10 @@ export default function DashboardPage() {
 
   // Simple severity distribution estimate for pie chart
   const pieData = [
-    { name: 'Critical', value: Math.round(totalFindings * 0.1) || 0, color: SEVERITY_COLORS.CRITICAL },
-    { name: 'High', value: Math.round(totalFindings * 0.2) || 0, color: SEVERITY_COLORS.HIGH },
-    { name: 'Medium', value: Math.round(totalFindings * 0.4) || 0, color: SEVERITY_COLORS.MEDIUM },
-    { name: 'Low', value: Math.round(totalFindings * 0.3) || 0, color: SEVERITY_COLORS.LOW },
+    { name: 'Critique', value: Math.round(totalFindings * 0.1) || 0, color: SEVERITY_COLORS.CRITICAL },
+    { name: 'Élevée', value: Math.round(totalFindings * 0.2) || 0, color: SEVERITY_COLORS.HIGH },
+    { name: 'Moyenne', value: Math.round(totalFindings * 0.4) || 0, color: SEVERITY_COLORS.MEDIUM },
+    { name: 'Faible', value: Math.round(totalFindings * 0.3) || 0, color: SEVERITY_COLORS.LOW },
   ].filter((d) => d.value > 0);
 
   // Score distribution for bar chart
@@ -67,7 +74,7 @@ export default function DashboardPage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold text-[#eaeff3]">Dashboard</h1>
+          <h1 className="text-3xl font-bold text-[#eaeff3]">Tableau de bord</h1>
           <p className="text-[color:var(--ss-text-muted)] mt-1">Aperçu de vos analyses de sécurité</p>
         </div>
         <Link
@@ -102,7 +109,7 @@ export default function DashboardPage() {
           {/* Severity Pie */}
           {pieData.length > 0 && (
             <div className="bg-[#0b1a1f]/80 border border-[#1b2836] rounded-xl p-6">
-              <h3 className="text-lg font-semibold text-[#eaeff3] mb-4">Severity Distribution</h3>
+              <h3 className="text-lg font-semibold text-[#eaeff3] mb-4">Répartition par sévérité</h3>
               <ResponsiveContainer width="100%" height={250}>
                 <PieChart>
                   <Pie data={pieData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={80} label={({ name, value }) => `${name}: ${value}`}>
@@ -119,7 +126,7 @@ export default function DashboardPage() {
           {/* Score Bar */}
           {scoreData.length > 0 && (
             <div className="bg-[#0b1a1f]/80 border border-[#1b2836] rounded-xl p-6">
-              <h3 className="text-lg font-semibold text-[#eaeff3] mb-4">Scan Scores</h3>
+              <h3 className="text-lg font-semibold text-[#eaeff3] mb-4">Scores des analyses</h3>
               <ResponsiveContainer width="100%" height={250}>
                 <BarChart data={scoreData}>
                   <XAxis dataKey="name" tick={{ fill: '#919ba5', fontSize: 12 }} />
@@ -159,7 +166,7 @@ export default function DashboardPage() {
                   <div>
                     <p className="text-[#eaeff3] font-medium">{scan.project.name}</p>
                     <p className="text-[color:var(--ss-text-muted)] text-sm mt-0.5">
-                      {new Date(scan.executedAt).toLocaleDateString()} &middot; {scan.findingsCount} findings
+                      {new Date(scan.executedAt).toLocaleDateString('fr-FR')} &middot; {scan.findingsCount} vulnérabilité{scan.findingsCount > 1 ? 's' : ''}
                     </p>
                   </div>
                 </div>
@@ -170,7 +177,7 @@ export default function DashboardPage() {
                     </span>
                   )}
                   <span className={`px-2.5 py-1 rounded-full text-xs font-medium ${STATUS_STYLES[scan.status] || 'bg-gray-800 text-gray-400'}`}>
-                    {scan.status}
+                    {STATUS_LABELS[scan.status] || scan.status}
                   </span>
                 </div>
               </Link>

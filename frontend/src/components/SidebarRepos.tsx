@@ -42,7 +42,7 @@ export default function SidebarRepos() {
     <div className="flex flex-col h-full">
       <div className="px-4 pt-3 pb-2">
         <h3 className="text-xs font-semibold uppercase tracking-wider text-[color:var(--ss-text-muted)]">
-          Repositories
+          Dépôts
         </h3>
       </div>
 
@@ -50,7 +50,7 @@ export default function SidebarRepos() {
         <div className="px-4 pb-2">
           <input
             type="text"
-            placeholder="Search repos..."
+            placeholder="Rechercher..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="w-full px-2.5 py-1.5 text-xs rounded-md bg-white/5 border border-[#1b2836] text-[#eaeff3] placeholder-[color:var(--ss-text-muted)] focus:outline-none focus:border-[#03e376]/50"
@@ -92,7 +92,7 @@ export default function SidebarRepos() {
         ))}
 
         {filtered.length === 0 && search && (
-          <p className="px-2 py-2 text-xs text-[color:var(--ss-text-muted)]">No repos found</p>
+          <p className="px-2 py-2 text-xs text-[color:var(--ss-text-muted)]">Aucun dépôt trouvé</p>
         )}
       </div>
 
@@ -101,7 +101,7 @@ export default function SidebarRepos() {
           onClick={() => setShowAll(!showAll)}
           className="px-4 py-2 text-xs text-[#03e376] hover:text-[#03e376]/80 transition-colors"
         >
-          {showAll ? 'Show less' : `Show all (${repos.length})`}
+          {showAll ? 'Voir moins' : `Tout voir (${repos.length})`}
         </button>
       )}
     </div>

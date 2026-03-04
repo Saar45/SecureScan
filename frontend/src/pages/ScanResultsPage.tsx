@@ -41,7 +41,7 @@ export default function ScanResultsPage() {
   }
 
   if (!scan) {
-    return <p className="text-gray-400">Scan not found.</p>;
+    return <p className="text-gray-400">Analyse introuvable.</p>;
   }
 
   const score = parseFloat(scan.globalScore || '0');
@@ -78,7 +78,7 @@ export default function ScanResultsPage() {
       const result = await applyFixes(id);
       setFixResult(result);
     } catch (err: any) {
-      setFixError(err.response?.data?.error || 'Failed to apply fixes');
+      setFixError(err.response?.data?.error || 'Échec de l\'application des correctifs');
     } finally {
       setApplyingFixes(false);
     }
@@ -112,7 +112,7 @@ export default function ScanResultsPage() {
               disabled={applyingFixes || fixResult !== null}
               className="px-4 py-2 bg-[#03e376] text-[#0a0f18] rounded-lg hover:bg-[#47e297] transition-colors text-sm font-medium disabled:opacity-50 shadow-[0_0_25px_rgba(3,227,118,0.25)]"
             >
-              {applyingFixes ? 'Apapplication des correctifs en cours...' : fixResult ? 'Correctifs appliqués' : 'Appliquer les correctifs & Créer PR'}
+              {applyingFixes ? 'Application des correctifs en cours...' : fixResult ? 'Correctifs appliqués' : 'Appliquer les correctifs & Créer PR'}
             </button>
           )}
         </div>
@@ -124,7 +124,7 @@ export default function ScanResultsPage() {
           <div>
             <p className="text-[#03e376] font-medium">Pull Request créée avec succès !</p>
             {fixResult.branch && (
-              <p className="text-[color:var(--ss-text-muted)] text-sm mt-0.5">Branch: {fixResult.branch}</p>
+              <p className="text-[color:var(--ss-text-muted)] text-sm mt-0.5">Branche : {fixResult.branch}</p>
             )}
           </div>
           <a
@@ -224,7 +224,7 @@ export default function ScanResultsPage() {
         </select>
 
         <span className="px-3 py-2 text-sm text-[color:var(--ss-text-muted)]">
-          {filtered.length} of {scan.findings.length} erreurs
+          {filtered.length} sur {scan.findings.length} erreurs
         </span>
       </div>
 
@@ -260,7 +260,7 @@ export default function ScanResultsPage() {
             {filtered.length === 0 && (
               <tr>
                 <td colSpan={5} className="px-4 py-8 text-center text-gray-500">
-                  No findings match the selected filters.
+                  Aucune vulnérabilité ne correspond aux filtres sélectionnés.
                 </td>
               </tr>
             )}

@@ -59,7 +59,7 @@ class ReportGenerator
                 $severityCounts[$sev]++;
             }
 
-            $owasp = $finding->getOwaspCategory() ?? 'Uncategorized';
+            $owasp = $finding->getOwaspCategory() ?? 'Non catégorisé';
             if (!isset($byOwasp[$owasp])) {
                 $byOwasp[$owasp] = [];
             }

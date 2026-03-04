@@ -3,7 +3,7 @@ import { useAuth } from '../context/AuthContext';
 import SidebarRepos from './SidebarRepos';
 
 const navItems = [
-  { path: '/dashboard', label: 'Dashboard', icon: 'M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-4 0a1 1 0 01-1-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 01-1 1' },
+  { path: '/dashboard', label: 'Tableau de bord', icon: 'M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-4 0a1 1 0 01-1-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 01-1 1' },
   { path: '/scan/new', label: 'Nouvelle analyse', icon: 'M12 4v16m8-8H4' },
 ];
 
@@ -65,7 +65,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
               <button
                 onClick={logout}
                 className="text-[color:var(--ss-text-muted)] hover:text-red-400 transition-colors"
-                title="Logout"
+                title="Déconnexion"
               >
                 <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15m3-3h-9m9 0l-3-3m3 3l-3 3" />

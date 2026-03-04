@@ -23,7 +23,7 @@ export default function NewScanPage() {
       const result = await createScan(repoUrl.trim());
       navigate(`/scan/${result.id}`);
     } catch (err: any) {
-      setError(err.response?.data?.error || 'Failed to start scan. Please try again.');
+      setError(err.response?.data?.error || 'Échec du lancement de l\'analyse. Veuillez réessayer.');
       setScanning(false);
     }
   };
@@ -39,7 +39,7 @@ export default function NewScanPage() {
       const result = await uploadScanArchive(zipFile);
       navigate(`/scan/${result.id}`);
     } catch (err: any) {
-      setError(err.response?.data?.error || 'Failed to upload and scan. Please try again.');
+      setError(err.response?.data?.error || 'Échec du téléchargement et de l\'analyse. Veuillez réessayer.');
       setScanning(false);
     }
   };
@@ -61,7 +61,7 @@ export default function NewScanPage() {
               : 'text-[color:var(--ss-text-muted)] hover:text-[color:var(--ss-text-main)]'
           }`}
         >
-          Repository URL
+          URL du dépôt
         </button>
         <button
           type="button"
@@ -72,7 +72,7 @@ export default function NewScanPage() {
               : 'text-[color:var(--ss-text-muted)] hover:text-[color:var(--ss-text-main)]'
           }`}
         >
-          Upload ZIP
+          Archive ZIP
         </button>
       </div>
 
@@ -80,7 +80,7 @@ export default function NewScanPage() {
         <form onSubmit={handleSubmitUrl} className="space-y-6">
           <div className="bg-[#0b1a1f]/80 border border-[#1b2836] rounded-xl p-6 space-y-4">
             <label className="block">
-              <span className="text-sm font-medium text-[#eaeff3]">Repository URL</span>
+              <span className="text-sm font-medium text-[#eaeff3]">URL du dépôt</span>
               <input
                 type="url"
                 value={repoUrl}
@@ -123,7 +123,7 @@ export default function NewScanPage() {
         <form onSubmit={handleSubmitZip} className="space-y-6">
           <div className="bg-[#0b1a1f]/80 border border-[#1b2836] rounded-xl p-6 space-y-4">
             <label className="block">
-              <span className="text-sm font-medium text-[#eaeff3]">ZIP archive (max 50 MB)</span>
+              <span className="text-sm font-medium text-[#eaeff3]">Archive ZIP (max 50 Mo)</span>
               <input
                 type="file"
                 accept=".zip"
@@ -134,7 +134,7 @@ export default function NewScanPage() {
             </label>
             {zipFile && (
               <p className="text-sm text-[color:var(--ss-text-muted)]">
-                Selected: {zipFile.name} ({(zipFile.size / 1024).toFixed(1)} KB)
+                Sélectionné : {zipFile.name} ({(zipFile.size / 1024).toFixed(1)} Ko)
               </p>
             )}
 
@@ -181,7 +181,7 @@ export default function NewScanPage() {
           </li>
           <li className="flex items-start gap-2">
             <span className="text-[#03e376] mt-0.5">&#x2022;</span>
-            <span><strong className="text-[#eaeff3]">Dependency Audit</strong> &mdash; analyse des vulnérabilités de npm/composer</span>
+            <span><strong className="text-[#eaeff3]">Audit de dépendances</strong> &mdash; Analyse des vulnérabilités npm/composer</span>
           </li>
         </ul>
       </div>
