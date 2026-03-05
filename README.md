@@ -1,5 +1,78 @@
 # Documentation technique — SecureScan
 
+## 0. Installation et lancement
+
+### Prérequis
+
+- **Docker** et **Docker Compose** installés
+- Un compte **GitHub** avec une [OAuth App](https://github.com/settings/developers) configurée :
+  - Homepage URL : `http://localhost:3000`
+  - Authorization callback URL : `http://localhost:3000/api/auth/github/callback`
+- *(Optionnel)* Une clé API **Groq** pour la génération de correctifs IA
+
+### Installation
+
+```bash
+# 1. Cloner le projet
+git clone https://github.com/Saar45/SecureScan.git
+cd SecureScan
+
+# 2. Configurer les variables d'environnement
+cp .env.example .env
+```
+
+Éditer le fichier `.env` et renseigner les valeurs suivantes :
+
+| Variable | Obligatoire | Description |
+|----------|:-----------:|-------------|
+| `MYSQL_ROOT_PASSWORD` | oui | Mot de passe root MySQL |
+| `MYSQL_DATABASE` | oui | Nom de la base (`security_scanner`) |
+| `MYSQL_USER` | oui | Utilisateur MySQL |
+| `MYSQL_PASSWORD` | oui | Mot de passe MySQL |
+| `APP_SECRET` | oui | Clé secrète Symfony (chaîne aléatoire) |
+| `GITHUB_CLIENT_ID` | oui | Client ID de l'OAuth App GitHub |
+| `GITHUB_CLIENT_SECRET` | oui | Client Secret de l'OAuth App GitHub |
+| `GROQ_API_KEY` | non | Clé API Groq pour les correctifs IA |
+| `GIT_TOKEN` | non | Token GitHub de secours pour les opérations Git |
+
+### Lancement
+
+```bash
+# 3. Démarrer tous les services
+docker compose up --build
+
+# Ou en arrière-plan
+docker compose up -d --build
+```
+
+Les migrations de base de données s'exécutent automatiquement au démarrage du conteneur backend.
+
+### Accès
+
+| Service | URL |
+|---------|-----|
+| Frontend | http://localhost:3000 |
+| Backend (API) | http://localhost:8080 |
+| phpMyAdmin | http://localhost:8081 |
+
+### Commandes utiles
+
+```bash
+# Lancer un scan depuis le terminal
+docker compose exec backend php bin/console app:full-pipeline <repo-url> [project-name]
+
+# Tester un scan sans intégration Git
+docker compose exec backend php bin/console app:test-scan <repo-url> [name]
+
+# Exécuter les tests
+docker compose exec backend composer test
+
+# Arrêter les services
+docker compose down
+```
+
+---
+
 ## 1. Vue d'ensemble
 
 **SecureScan** est une plateforme de scan de sécurité automatisé pour dépôts Git. L'application clone un dépôt, exécute plusieurs outils d'analyse (Semgrep, TruffleHog, audits npm/composer), normalise les résultats, calcule un score global, puis peut créer une branche de correction et générer un rapport PDF.
@@ -259,12 +332,25 @@ Transmises via le fichier `.env` (copie de `.env.example`) :
 
 ## 8. Documentation complémentaire
 
+### Documents
+
 | Document | Contenu |
 |----------|---------|
-| [feature-scan-pipeline.md](feature-scan-pipeline.md) | Pipeline de scan (Semgrep, TruffleHog, audits). |
-| [feature-git-integration.md](feature-git-integration.md) | Intégration Git et rapport PDF. |
-| [feature-oauth.md](feature-oauth.md) | Authentification GitHub OAuth. |
-| [README.md](../README.md) | Installation, lancement, variables d’environnement, commandes CLI. |
+| [Documentation Utilisateur](docs/Documentation%20Utilisateur.pdf) | Guide utilisateur complet (PDF). |
+| [Rapport de sécurité (exemple)](docs/Rapport_de_sécurité_généré_exemple.pdf) | Exemple de rapport PDF généré par SecureScan. |
+| [feature-scan-pipeline.md](docs/feature-scan-pipeline.md) | Pipeline de scan (Semgrep, TruffleHog, audits). |
+| [feature-git-integration.md](docs/feature-git-integration.md) | Intégration Git et rapport PDF. |
+| [feature-oauth.md](docs/feature-oauth.md) | Authentification GitHub OAuth. |
+| [DOCUMENTATION_TECHNIQUE.md](docs/DOCUMENTATION_TECHNIQUE.md) | Documentation technique détaillée. |
+
+### Diagrammes
+
+| Diagramme | Description |
+|-----------|-------------|
+| [Cas d'utilisation](docs/diagrammes/Diagramme%20de%20Cas%20d'Utilisation%20(Use%20Case).png) | Diagramme Use Case — acteurs et fonctionnalités. |
+| [Classes](docs/diagrammes/Diagramme%20de%20Classes%20(Structure).png) | Diagramme de classes — entités et relations. |
+| [Activité](docs/diagrammes/Diagramme%20d'Activité%20(Workflow).png) | Diagramme d'activité — workflow du scan. |
+| [Séquence](docs/diagrammes/Diagramme%20de%20séquence.png) | Diagramme de séquence — flux OAuth et scan. |
 
 ---
 
