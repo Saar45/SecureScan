@@ -342,6 +342,7 @@ Transmises via le fichier `.env` (copie de `.env.example`) :
 | [feature-git-integration.md](docs/feature-git-integration.md) | Intégration Git et rapport PDF. |
 | [feature-oauth.md](docs/feature-oauth.md) | Authentification GitHub OAuth. |
 | [DOCUMENTATION_TECHNIQUE.md](docs/DOCUMENTATION_TECHNIQUE.md) | Documentation technique détaillée. |
+| [MCD.png](docs/MCD.png) | Modèle conceptuel des données. |
 
 ### Diagrammes
 
