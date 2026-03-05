@@ -44,8 +44,8 @@ class ScanController extends AbstractController
             return $this->json(['error' => 'repositoryUrl or projectId is required'], 400);
         }
 
-        if ($repoUrl && !preg_match('#^https://#i', $repoUrl)) {
-            return $this->json(['error' => 'Only https:// repository URLs are allowed'], 400);
+        if ($repoUrl && !preg_match('#^https://(github\.com|gitlab\.com)/#i', $repoUrl)) {
+            return $this->json(['error' => 'Seules les URLs GitHub et GitLab sont autorisées'], 400);
         }
 
         if ($projectId) {

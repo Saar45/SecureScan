@@ -12,9 +12,17 @@ export default function NewScanPage() {
   const [error, setError] = useState<string | null>(null);
   const navigate = useNavigate();
 
+  const isValidRepoUrl = (url: string) =>
+    /^https:\/\/(github\.com|gitlab\.com)\//i.test(url);
+
   const handleSubmitUrl = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!repoUrl.trim()) return;
+
+    if (!isValidRepoUrl(repoUrl.trim())) {
+      setError('Seules les URLs GitHub et GitLab sont autorisées (ex: https://github.com/owner/repo)');
+      return;
+    }
 
     setScanning(true);
     setError(null);
