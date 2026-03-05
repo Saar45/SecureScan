@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
-import { fetchRecentScans, type ScanSummary } from '../api/scans';
+import { fetchRecentScans, createScan, type ScanSummary } from '../api/scans';
+import { useToast } from '../components/Toast';
 
 const SEVERITY_COLORS: Record<string, string> = {
   CRITICAL: '#ef4444',
@@ -25,9 +26,53 @@ const STATUS_LABELS: Record<string, string> = {
   failed: 'Échoué',
 };
 
+function DashboardSkeleton() {
+  return (
+    <div className="space-y-8">
+      <div className="flex items-center justify-between">
+        <div>
+          <div className="skeleton h-9 w-56 mb-2" />
+          <div className="skeleton h-4 w-72" />
+        </div>
+        <div className="skeleton h-10 w-40 rounded-lg" />
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        {Array.from({ length: 3 }).map((_, i) => (
+          <div key={i} className="bg-[#0b1a1f]/80 border border-[#1b2836] rounded-xl p-6">
+            <div className="skeleton h-4 w-32 mb-3" />
+            <div className="skeleton h-9 w-16" />
+          </div>
+        ))}
+      </div>
+
+      <div>
+        <div className="skeleton h-7 w-48 mb-4" />
+        <div className="grid gap-4">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <div key={i} className="bg-[#0b1a1f]/80 border border-[#1b2836] rounded-xl p-5 flex items-center justify-between">
+              <div>
+                <div className="skeleton h-5 w-48 mb-2" />
+                <div className="skeleton h-4 w-36" />
+              </div>
+              <div className="flex items-center gap-4">
+                <div className="skeleton h-6 w-16" />
+                <div className="skeleton h-6 w-20 rounded-full" />
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function DashboardPage() {
   const [scans, setScans] = useState<ScanSummary[]>([]);
   const [loading, setLoading] = useState(true);
+  const [retryingId, setRetryingId] = useState<string | null>(null);
+  const navigate = useNavigate();
+  const { toast } = useToast();
 
   useEffect(() => {
     fetchRecentScans()
@@ -36,18 +81,12 @@ export default function DashboardPage() {
       .finally(() => setLoading(false));
   }, []);
 
-  // Aggregate severity data from completed scans for charts
-  const severityCounts: Record<string, number> = {};
-  const owaspCounts: Record<string, number> = {};
-
-  // We'll compute these from scan summaries (limited info available)
   const completedScans = scans.filter((s) => s.status === 'completed');
   const totalFindings = scans.reduce((acc, s) => acc + s.findingsCount, 0);
   const avgScore = completedScans.length > 0
     ? completedScans.reduce((acc, s) => acc + parseFloat(s.globalScore || '0'), 0) / completedScans.length
     : 0;
 
-  // Simple severity distribution estimate for pie chart
   const pieData = [
     { name: 'Critique', value: Math.round(totalFindings * 0.1) || 0, color: SEVERITY_COLORS.CRITICAL },
     { name: 'Élevée', value: Math.round(totalFindings * 0.2) || 0, color: SEVERITY_COLORS.HIGH },
@@ -55,19 +94,26 @@ export default function DashboardPage() {
     { name: 'Faible', value: Math.round(totalFindings * 0.3) || 0, color: SEVERITY_COLORS.LOW },
   ].filter((d) => d.value > 0);
 
-  // Score distribution for bar chart
   const scoreData = completedScans.map((s) => ({
     name: s.project.name.substring(0, 15),
     score: parseFloat(s.globalScore || '0'),
   }));
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-[#03e376]" />
-      </div>
-    );
-  }
+  const handleRetry = async (e: React.MouseEvent, scan: ScanSummary) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setRetryingId(scan.id);
+    try {
+      const result = await createScan(scan.project.repositoryUrl);
+      toast('Nouvelle analyse lancée', 'success');
+      navigate(`/scan/${result.id}`);
+    } catch {
+      toast('Échec du lancement de l\'analyse', 'error');
+      setRetryingId(null);
+    }
+  };
+
+  if (loading) return <DashboardSkeleton />;
 
   return (
     <div className="space-y-8">
@@ -96,7 +142,7 @@ export default function DashboardPage() {
           <p className="text-3xl font-bold text-[#eaeff3] mt-1">{totalFindings}</p>
         </div>
         <div className="bg-[#0b1a1f]/80 border border-[#1b2836] rounded-xl p-6">
-          <p className="text-sm text-[color:var(--ss-text-muted)]">Score Global </p>
+          <p className="text-sm text-[color:var(--ss-text-muted)]">Score Global</p>
           <p className={`text-3xl font-bold mt-1 ${avgScore >= 70 ? 'text-green-400' : avgScore >= 40 ? 'text-yellow-400' : 'text-red-400'}`}>
             {avgScore > 0 ? avgScore.toFixed(1) : '—'}/100
           </p>
@@ -106,7 +152,6 @@ export default function DashboardPage() {
       {/* Charts */}
       {completedScans.length > 0 && (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {/* Severity Pie */}
           {pieData.length > 0 && (
             <div className="bg-[#0b1a1f]/80 border border-[#1b2836] rounded-xl p-6">
               <h3 className="text-lg font-semibold text-[#eaeff3] mb-4">Répartition par sévérité</h3>
@@ -123,7 +168,6 @@ export default function DashboardPage() {
             </div>
           )}
 
-          {/* Score Bar */}
           {scoreData.length > 0 && (
             <div className="bg-[#0b1a1f]/80 border border-[#1b2836] rounded-xl p-6">
               <h3 className="text-lg font-semibold text-[#eaeff3] mb-4">Scores des analyses</h3>
@@ -171,6 +215,15 @@ export default function DashboardPage() {
                   </div>
                 </div>
                 <div className="flex items-center gap-4">
+                  {scan.status === 'failed' && (
+                    <button
+                      onClick={(e) => handleRetry(e, scan)}
+                      disabled={retryingId === scan.id}
+                      className="px-3 py-1.5 text-xs font-medium text-orange-400 bg-orange-500/10 border border-orange-500/20 rounded-lg hover:bg-orange-500/20 transition-colors disabled:opacity-50"
+                    >
+                      {retryingId === scan.id ? 'Relance...' : 'Relancer'}
+                    </button>
+                  )}
                   {scan.globalScore && (
                     <span className={`text-lg font-bold ${parseFloat(scan.globalScore) >= 70 ? 'text-green-400' : parseFloat(scan.globalScore) >= 40 ? 'text-yellow-400' : 'text-red-400'}`}>
                       {parseFloat(scan.globalScore).toFixed(0)}/100
