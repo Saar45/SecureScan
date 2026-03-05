@@ -1,14 +1,18 @@
 import { useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { fetchGitHubRepos, type GitHubRepo } from '../api/auth';
 import { createScan } from '../api/scans';
+import { useToast } from './Toast';
 
 export default function SidebarRepos() {
   const navigate = useNavigate();
+  const { toast } = useToast();
   const [search, setSearch] = useState('');
   const [showAll, setShowAll] = useState(false);
-  const [scanningId, setScanningId] = useState<number | null>(null);
+  const [pendingRepo, setPendingRepo] = useState<GitHubRepo | null>(null);
+  const [scanning, setScanning] = useState(false);
 
   const { data: repos, isError } = useQuery({
     queryKey: ['github-repos'],
@@ -26,15 +30,29 @@ export default function SidebarRepos() {
   const visible = showAll ? filtered : filtered.slice(0, 10);
   const hasMore = filtered.length > 10;
 
-  async function handleScan(repo: GitHubRepo) {
-    if (scanningId) return;
-    setScanningId(repo.id);
+  function handleClick(repo: GitHubRepo) {
+    if (scanning) return;
+    setPendingRepo(repo);
+  }
+
+  function handleClose() {
+    if (scanning) return;
+    setPendingRepo(null);
+  }
+
+  async function handleConfirm() {
+    if (!pendingRepo) return;
+    setScanning(true);
     try {
-      const result = await createScan(repo.cloneUrl);
-      setScanningId(null);
+      const result = await createScan(pendingRepo.cloneUrl);
+      toast('Analyse terminée', 'success');
+      setScanning(false);
+      setPendingRepo(null);
       navigate(`/scan/${result.id}`);
     } catch {
-      setScanningId(null);
+      toast('Échec du lancement de l\'analyse', 'error');
+      setScanning(false);
+      setPendingRepo(null);
     }
   }
 
@@ -62,16 +80,11 @@ export default function SidebarRepos() {
         {visible.map((repo) => (
           <button
             key={repo.id}
-            onClick={() => handleScan(repo)}
-            disabled={scanningId !== null}
+            onClick={() => handleClick(repo)}
+            disabled={scanning}
             className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-left text-xs transition-colors hover:bg-white/5 disabled:opacity-50 group"
           >
-            {scanningId === repo.id ? (
-              <svg className="w-3.5 h-3.5 shrink-0 animate-spin text-[#03e376]" fill="none" viewBox="0 0 24 24">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-              </svg>
-            ) : repo.private ? (
+            {repo.private ? (
               <svg className="w-3.5 h-3.5 shrink-0 text-[color:var(--ss-text-muted)]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z" />
               </svg>
@@ -103,6 +116,52 @@ export default function SidebarRepos() {
         >
           {showAll ? 'Voir moins' : `Tout voir (${repos.length})`}
         </button>
+      )}
+
+      {/* Confirmation / Scanning popup — rendered via portal to escape sidebar stacking context */}
+      {pendingRepo && createPortal(
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={!scanning ? handleClose : undefined}>
+          <div className="bg-[#0f1f28] border border-[#1b2836] rounded-xl p-6 w-full max-w-sm mx-4 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            {!scanning ? (
+              <>
+                <h3 className="text-lg font-semibold text-[#eaeff3]">Lancer une analyse ?</h3>
+                <p className="text-sm text-[color:var(--ss-text-muted)] mt-2">
+                  Voulez-vous scanner le dépôt <strong className="text-[#eaeff3]">{pendingRepo.name}</strong> ?
+                </p>
+                {pendingRepo.description && (
+                  <p className="text-xs text-[color:var(--ss-text-muted)] mt-1 italic">{pendingRepo.description}</p>
+                )}
+                <div className="flex gap-3 mt-5">
+                  <button
+                    onClick={handleClose}
+                    className="flex-1 px-4 py-2 text-sm font-medium text-[color:var(--ss-text-main)] bg-white/5 border border-[#1b2836] rounded-lg hover:bg-white/10 transition-colors"
+                  >
+                    Annuler
+                  </button>
+                  <button
+                    onClick={handleConfirm}
+                    className="flex-1 px-4 py-2 text-sm font-medium text-[#0a0f18] bg-[#03e376] rounded-lg hover:bg-[#47e297] transition-colors shadow-[0_0_20px_rgba(3,227,118,0.25)]"
+                  >
+                    Scanner
+                  </button>
+                </div>
+              </>
+            ) : (
+              <div className="flex flex-col items-center py-2">
+                <svg className="w-8 h-8 animate-spin text-[#03e376]" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                </svg>
+                <h3 className="text-lg font-semibold text-[#eaeff3] mt-4">Analyse en cours...</h3>
+                <p className="text-sm text-[color:var(--ss-text-muted)] mt-1 text-center">
+                  Scan de <strong className="text-[#eaeff3]">{pendingRepo.name}</strong>
+                </p>
+                <p className="text-xs text-[color:var(--ss-text-muted)] mt-1">Cela peut prendre quelques minutes</p>
+              </div>
+            )}
+          </div>
+        </div>,
+        document.body,
       )}
     </div>
   );
