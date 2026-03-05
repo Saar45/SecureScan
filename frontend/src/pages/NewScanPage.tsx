@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { createScan, uploadScanArchive } from '../api/scans';
 
 type Mode = 'url' | 'zip';
@@ -47,6 +47,15 @@ export default function NewScanPage() {
   return (
     <div className="max-w-2xl mx-auto space-y-8">
       <div>
+        <Link
+          to="/dashboard"
+          className="inline-flex items-center gap-1.5 text-sm text-[color:var(--ss-text-muted)] hover:text-[#03e376] transition-colors mb-3"
+        >
+          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M10.5 19.5L3 12m0 0l7.5-7.5M3 12h18" />
+          </svg>
+          Retour au tableau de bord
+        </Link>
         <h1 className="text-3xl font-bold text-[#eaeff3]">Nouvelle analyse</h1>
         <p className="text-[color:var(--ss-text-muted)] mt-1">Scannez un dépôt Git par URL ou téléchargez une archive ZIP de votre code.</p>
       </div>
