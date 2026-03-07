@@ -44,8 +44,11 @@ class ScanController extends AbstractController
             return $this->json(['error' => 'repositoryUrl or projectId is required'], 400);
         }
 
-        if ($repoUrl && !preg_match('#^https://#i', $repoUrl)) {
-            return $this->json(['error' => 'Only https:// repository URLs are allowed'], 400);
+        if ($repoUrl) {
+            $urlError = $this->validateRepositoryUrl($repoUrl);
+            if ($urlError !== null) {
+                return $this->json(['error' => $urlError], 400);
+            }
         }
 
         if ($projectId) {
@@ -355,6 +358,49 @@ class ScanController extends AbstractController
         if ($scan->getProject()->getOwner() !== $this->getUser()) {
             throw $this->createAccessDeniedException();
         }
+    }
+
+    private const ALLOWED_GIT_HOSTS = [
+        'github.com',
+        'gitlab.com',
+        'bitbucket.org',
+        'codeberg.org',
+        'gitea.com',
+    ];
+
+    private function validateRepositoryUrl(string $url): ?string
+    {
+        if (!preg_match('#^https://#i', $url)) {
+            return 'Only https:// repository URLs are allowed';
+        }
+
+        $parsed = parse_url($url);
+        $host = strtolower($parsed['host'] ?? '');
+
+        if ($host === '' || isset($parsed['port'])) {
+            return 'Invalid repository URL';
+        }
+
+        if (filter_var($host, FILTER_VALIDATE_IP)) {
+            return 'IP addresses are not allowed. Use a Git hosting provider (e.g. github.com)';
+        }
+
+        $allowed = false;
+        foreach (self::ALLOWED_GIT_HOSTS as $allowedHost) {
+            if ($host === $allowedHost || str_ends_with($host, '.' . $allowedHost)) {
+                $allowed = true;
+                break;
+            }
+        }
+
+        if (!$allowed) {
+            return sprintf(
+                'Only repositories from supported Git providers are allowed (%s)',
+                implode(', ', self::ALLOWED_GIT_HOSTS)
+            );
+        }
+
+        return null;
     }
 
     private function extractProjectName(string $repoUrl): string

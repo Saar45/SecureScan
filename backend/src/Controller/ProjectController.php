@@ -50,8 +50,9 @@ class ProjectController extends AbstractController
             return $this->json(['error' => 'name and repositoryUrl are required'], 400);
         }
 
-        if (!preg_match('#^https://#i', $repoUrl)) {
-            return $this->json(['error' => 'Only https:// repository URLs are allowed'], 400);
+        $urlError = $this->validateRepositoryUrl($repoUrl);
+        if ($urlError !== null) {
+            return $this->json(['error' => $urlError], 400);
         }
 
         $project = new Project();
@@ -112,5 +113,54 @@ class ProjectController extends AbstractController
         if ($project->getOwner() !== $this->getUser()) {
             throw $this->createAccessDeniedException();
         }
+    }
+
+    private const ALLOWED_GIT_HOSTS = [
+        'github.com',
+        'gitlab.com',
+        'bitbucket.org',
+        'codeberg.org',
+        'gitea.com',
+    ];
+
+    /**
+     * Validates a repository URL against SSRF attacks by enforcing HTTPS
+     * and restricting to known Git hosting providers.
+     */
+    private function validateRepositoryUrl(string $url): ?string
+    {
+        if (!preg_match('#^https://#i', $url)) {
+            return 'Only https:// repository URLs are allowed';
+        }
+
+        $parsed = parse_url($url);
+        $host = strtolower($parsed['host'] ?? '');
+
+        if ($host === '' || isset($parsed['port'])) {
+            return 'Invalid repository URL';
+        }
+
+        // Block IP addresses (prevent SSRF to internal networks / cloud metadata)
+        if (filter_var($host, FILTER_VALIDATE_IP)) {
+            return 'IP addresses are not allowed. Use a Git hosting provider (e.g. github.com)';
+        }
+
+        // Allow only known Git hosting providers
+        $allowed = false;
+        foreach (self::ALLOWED_GIT_HOSTS as $allowedHost) {
+            if ($host === $allowedHost || str_ends_with($host, '.' . $allowedHost)) {
+                $allowed = true;
+                break;
+            }
+        }
+
+        if (!$allowed) {
+            return sprintf(
+                'Only repositories from supported Git providers are allowed (%s)',
+                implode(', ', self::ALLOWED_GIT_HOSTS)
+            );
+        }
+
+        return null;
     }
 }
