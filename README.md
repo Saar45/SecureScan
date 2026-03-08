@@ -23,17 +23,65 @@ cp .env.example .env
 
 Éditer le fichier `.env` et renseigner les valeurs suivantes :
 
-| Variable | Obligatoire | Description |
-|----------|:-----------:|-------------|
-| `MYSQL_ROOT_PASSWORD` | oui | Mot de passe root MySQL |
-| `MYSQL_DATABASE` | oui | Nom de la base (`security_scanner`) |
-| `MYSQL_USER` | oui | Utilisateur MySQL |
-| `MYSQL_PASSWORD` | oui | Mot de passe MySQL |
-| `APP_SECRET` | oui | Clé secrète Symfony (chaîne aléatoire) |
-| `GITHUB_CLIENT_ID` | oui | Client ID de l'OAuth App GitHub |
-| `GITHUB_CLIENT_SECRET` | oui | Client Secret de l'OAuth App GitHub |
-| `GROQ_API_KEY` | non | Clé API Groq pour les correctifs IA |
-| `GIT_TOKEN` | non | Token GitHub de secours pour les opérations Git |
+#### MySQL
+
+| Variable | Description |
+|----------|-------------|
+| `MYSQL_ROOT_PASSWORD` | Mot de passe root — choisir librement (ex. `rootpass`) |
+| `MYSQL_DATABASE` | Nom de la base — laisser `security_scanner` par défaut |
+| `MYSQL_USER` | Nom d'utilisateur — choisir librement (ex. `scanner`) |
+| `MYSQL_PASSWORD` | Mot de passe utilisateur — choisir librement |
+
+> Ces variables configurent le conteneur Docker MySQL local. Vous pouvez choisir les valeurs que vous voulez.
+
+#### Symfony
+
+| Variable | Description |
+|----------|-------------|
+| `APP_ENV` | Laisser `dev` pour le développement local |
+| `APP_SECRET` | Chaîne aléatoire — générer avec : `openssl rand -hex 16` |
+| `CORS_ALLOW_ORIGIN` | Laisser `http://localhost:3000` pour le développement local |
+
+#### GitHub OAuth (obligatoire)
+
+Ces identifiants permettent la connexion via GitHub. Pour les obtenir :
+
+1. Aller sur **GitHub** → **Settings** → **Developer settings** → **OAuth Apps** → **New OAuth App**
+2. Remplir le formulaire :
+   - **Application name** : `SecureScan` (ou autre)
+   - **Homepage URL** : `http://localhost:3000`
+   - **Authorization callback URL** : `http://localhost:3000/api/auth/github/callback`
+3. Cliquer sur **Register application**
+4. Copier le **Client ID** → `GITHUB_CLIENT_ID`
+5. Cliquer sur **Generate a new client secret** → copier la valeur → `GITHUB_CLIENT_SECRET`
+
+| Variable | Description |
+|----------|-------------|
+| `GITHUB_CLIENT_ID` | Client ID de l'OAuth App créée ci-dessus |
+| `GITHUB_CLIENT_SECRET` | Client Secret généré ci-dessus |
+
+#### Git Token (optionnel)
+
+Token de secours pour les commandes CLI (quand aucune session OAuth n'est active).
+
+1. Aller sur **GitHub** → **Settings** → **Developer settings** → **Personal access tokens** → **Tokens (classic)**
+2. Cliquer sur **Generate new token (classic)**
+3. Cocher le scope **repo** (accès complet aux dépôts)
+4. Copier le token → `GIT_TOKEN`
+
+#### Groq AI (optionnel)
+
+Clé API pour la génération de correctifs par IA (Llama 3.3 70B via Groq).
+
+1. Créer un compte sur **https://console.groq.com**
+2. Aller dans **API Keys** → **Create API Key**
+3. Copier la clé → `GROQ_API_KEY`
+
+#### Frontend
+
+| Variable | Description |
+|----------|-------------|
+| `VITE_API_URL` | URL de l'API backend — laisser `http://localhost:8080` pour le développement local |
 
 ### Lancement
 
